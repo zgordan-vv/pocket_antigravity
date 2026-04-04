@@ -216,20 +216,22 @@ async function handleInput(text, ctx) {
     // Safety Loop: Initial probe or direct answer
     const probe = await deepseek.chat.completions.create({
       messages: [
-        { role: 'system', content: "You are the Antigravity AI Agent. DO NOT GUESS. Review the context below. If you need to read a file to answer correctly, reply ONLY with 'READ: filename'. Context:\n" + context },
+        { role: 'system', content: "You are the Antigravity AI Agent. DO NOT GUESS or use filler language like 'might be'. If you lack information, return ONLY 'READ: filename'. Context:\n" + context },
         { role: 'user', content: text }
       ],
       model: 'deepseek-chat',
     });
 
     const response = probe.choices[0].message.content;
-    if (response.startsWith('READ:')) {
-      const fileName = response.replace('READ:', '').trim();
+    const readMatch = response.match(/READ:\s*([^\s\n]+)/);
+
+    if (readMatch) {
+      const fileName = readMatch[1].replace(/[`]/g, ''); // Clean backticks
       const currentPath = await getPtyCwd();
-      const fileContent = await execPromise(`cat "${fileName}" | head -n 50`, { cwd: currentPath }).then(r => r.stdout).catch(() => "File unreadable.");
+      const fileContent = await execPromise(`cat "${fileName}" | head -n 100`, { cwd: currentPath }).then(r => r.stdout).catch(() => "File unreadable.");
       const finalReply = await deepseek.chat.completions.create({
         messages: [
-          { role: 'system', content: "Based on the content below, answer the user's question concisely using HTML (<b>, <i>, <code>). Maximum 3 bullets. Source: " + fileName },
+          { role: 'system', content: "Based ONLY on the content below, provide a factual answer using HTML tags (<b>, <i>, <code>). Maximum 3 bullets. Be direct and avoid hedging. Source: " + fileName },
           { role: 'user', content: `Question: ${text}\n\nFile Content:\n${fileContent}` }
         ],
         model: 'deepseek-chat',
