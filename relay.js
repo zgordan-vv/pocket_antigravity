@@ -190,7 +190,37 @@ bot.command('result', (ctx) => {
   ctx.reply(`♻️ <b>Last Result (Cached)</b>\n\n${lastSummary}`, { parse_mode: 'HTML' });
 });
 
+async function hasActiveAgent() {
+  try {
+    const { stdout } = await execPromise(`pgrep -P ${ptyProcess.pid}`);
+    return stdout.trim().length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function handleInput(text, ctx) {
+  // 1. Is this a question? (contains ?, what, how, why, is, etc.)
+  const questionWords = ['what', 'why', 'how', 'is', 'who', 'where', 'purpose', 'goal', 'can you'];
+  const isQuestion = text.includes('?') || questionWords.some(w => text.toLowerCase().startsWith(w));
+  
+  // 2. Is there an agent (like node, claude, cursor) already running?
+  const agentRunning = await hasActiveAgent();
+
+  if (isQuestion && !agentRunning) {
+    ctx.reply("🤔 <i>Consulting project...</i>", { parse_mode: 'HTML' });
+    const context = await getProjectContext();
+    const answer = await deepseek.chat.completions.create({
+      messages: [
+        { role: 'system', content: "You are the Antigravity AI Agent. Answer questions about the project concisely using HTML (<b>, <i>, <code>). Maximum 3 bullets. Context:\n" + context },
+        { role: 'user', content: text }
+      ],
+      model: 'deepseek-chat',
+    });
+    return ctx.reply(answer.choices[0].message.content, { parse_mode: 'HTML' });
+  }
+
+  // It's a command or an agent is already handling it
   lastCommandIndex = terminalBuffer.length;
   isCommandRunning = true;
   ptyProcess.write(text + '\n');
