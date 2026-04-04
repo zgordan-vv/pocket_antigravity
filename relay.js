@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
 const pty = require('node-pty');
 const OpenAI = require('openai');
 const fs = require('fs');
@@ -33,6 +33,7 @@ const openai = new OpenAI({
 
 // Terminal
 const shell = 'zsh';
+const PARENT_DIR = path.resolve(process.cwd(), '..');
 const ptyProcess = pty.spawn(shell, [], {
   name: 'xterm-color',
   cols: 80,
@@ -47,7 +48,7 @@ let isCommandRunning = false;
 let lastSummary = "No commands executed yet.";
 const MAX_BUFFER = 2000;
 
-// Prompt Detection (for macOS/zsh)
+// Prompt Detection (macOS/zsh)
 function isPrompt(data) {
   return data.includes('% ') || data.includes('$ ');
 }
@@ -59,7 +60,6 @@ ptyProcess.onData(async (data) => {
   
   process.stdout.write(data);
 
-  // Auto-Summarize when command finishes
   if (isCommandRunning && isPrompt(clean)) {
     isCommandRunning = false;
     const output = terminalBuffer.slice(lastCommandIndex).join('');
@@ -72,27 +72,23 @@ ptyProcess.onData(async (data) => {
   }
 });
 
-// Logging Helper
 function logToAudit(type, content) {
   const entry = `[${new Date().toISOString()}] ${type}:\n${content}\n${'-'.repeat(40)}\n`;
   fs.appendFileSync('session_audit.log', entry);
 }
 
-// Project Context Skimmer
 async function getProjectContext() {
   try {
-    const [git, files, pkg] = await Promise.all([
+    const [git, files] = await Promise.all([
       execPromise('git status -s').then(r => r.stdout).catch(() => 'No git'),
-      execPromise('ls -t | head -n 5').then(r => r.stdout).catch(() => 'No files'),
-      execPromise('cat package.json').then(r => r.stdout).catch(() => '{}')
+      execPromise('ls -t | head -n 5').then(r => r.stdout).catch(() => 'No files')
     ]);
-    return `PROJECT AT A GLANCE:\nGit: ${git}\nRecent Files: ${files}\nMetadata: ${pkg.slice(0, 200)}`;
+    return `Context: Git=${git || 'clean'}, Files=${files}`;
   } catch (e) {
     return "Context unavailable.";
   }
 }
 
-// STT Helper
 async function transcribeVoice(fileId) {
   try {
     const link = await bot.telegram.getFileLink(fileId);
@@ -109,21 +105,17 @@ async function transcribeVoice(fileId) {
     fs.unlinkSync(audioPath);
     return transcription.text;
   } catch (err) {
-    console.error("STT Error", err);
     return null;
   }
 }
 
-// Summarizer
 async function summarize(content, type = "status") {
   const context = await getProjectContext();
-  const systemPrompt = "You are a senior developer assistant. Summarize the terminal output based on the project context. Be extremely concise (3 bullet points max). Focus on success/failure and next steps.";
-  
   try {
     const completion = await deepseek.chat.completions.create({
       messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Context:\n${context}\n\nRecent Output:\n${content}` }
+        { role: 'system', content: "Summarize terminal output concisely (3 bullets max). Know that files and git status are context." },
+        { role: 'user', content: `Context:\n${context}\n\nOutput:\n${content}` }
       ],
       model: 'deepseek-chat',
     });
@@ -134,7 +126,42 @@ async function summarize(content, type = "status") {
 }
 
 // Bot Commands
-bot.start((ctx) => ctx.reply("Pocket Antigravity (Smarter Edition) Active.\n\nWatching for % or $ prompts."));
+bot.start((ctx) => ctx.reply("Pocket Antigravity Dashboard.\nCommands: /projects, /status, /result."));
+
+bot.command('projects', async (ctx) => {
+  try {
+    const items = fs.readdirSync(PARENT_DIR, { withFileTypes: true });
+    const folders = items.filter(i => i.isDirectory() && !i.name.startsWith('.')).map(i => i.name);
+    
+    if (folders.length === 0) return ctx.reply("No other projects found in the parent directory.");
+    
+    const buttons = folders.map(f => Markup.button.callback(f, `cd:${f}`));
+    // Group in pairs for better UI
+    const chunks = [];
+    for (let i = 0; i < buttons.length; i += 2) chunks.push(buttons.slice(i, i + 2));
+    
+    ctx.reply("📂 *Select Active Workspace:*", Markup.inlineKeyboard(chunks));
+  } catch (e) {
+    ctx.reply("Failed to list projects.");
+  }
+});
+
+bot.action(/^cd:(.+)$/, async (ctx) => {
+  const project = ctx.match[1];
+  const targetPath = path.join(PARENT_DIR, project);
+  
+  lastCommandIndex = terminalBuffer.length;
+  ptyProcess.write(`cd "${targetPath}"\n`);
+  
+  ctx.answerCbQuery(`Switching to ${project}...`);
+  ctx.reply(`🚀 *Workspace Switch: ${project}*`);
+  
+  // Quick delay for the cd to settle then summarize
+  setTimeout(async () => {
+    const summary = await summarize("Switched to project " + project, "status");
+    ctx.reply(`📊 *Project Audit*\n\n${summary}`, { parse_mode: 'Markdown' });
+  }, 1000);
+});
 
 bot.command('status', async (ctx) => {
   const summary = await summarize(terminalBuffer.slice(-200).join(''), "status");
@@ -170,7 +197,7 @@ bot.on('voice', async (ctx) => {
 });
 
 bot.launch();
-console.log("Smarter Relay loop active...");
+console.log("Pocket Antigravity Relay started. Waiting for Telegram orders...");
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
