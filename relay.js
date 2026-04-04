@@ -32,7 +32,7 @@ const openai = new OpenAI({
 });
 
 // Terminal
-const shell = 'zsh';
+const shell = fs.existsSync('/bin/zsh') ? '/bin/zsh' : 'sh';
 const PARENT_DIR = path.resolve(process.cwd(), '..');
 const ptyProcess = pty.spawn(shell, [], {
   name: 'xterm-color',
