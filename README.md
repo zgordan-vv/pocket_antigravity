@@ -43,12 +43,24 @@ A Telegram-powered remote control for your local terminal. Ship code from your p
 
 ## Commands
 - `/prompt [text]` - Send a command to the terminal.
-- `/status` - Get a summary of the current terminal state.
-- `/result` - Get a summary of the output produced *after* your last command.
+- `/projects` - Open an interactive dashboard to switch between projects in your `lab/` folder.
+- `/status` - Get a summary of the current terminal state and project health.
+- `/result` - Get a cached summary of the last completed task.
+- *Voice Message* - Hold the mic to transcribe and relay a voice command automatically.
 - *Direct Text* - Anything sent (not starting with /) is relayed as a command.
 
+## 📂 The Project Switcher
+The relay is designed to work with all projects in your parent directory. By running `/projects`, you will see an inline keyboard of all sibling folders. Tapping a project will automatically `cd` the terminal into that folder and return a fresh context summary.
+
+## 🛡️ Security
+- **ID Locking:** The bot only responds to the `ALLOWED_USER_ID` set in your `.env`.
+- **GPLv3 License:** This project is open-source and protected against proprietary takeover.
+
 ## Architecture
-- **Front-end:** Telegram Bot.
+- **Front-end:** Telegram Bot (`Telegraf.js`).
 - **Relay:** Node.js server with `node-pty`.
-- **Brain:** DeepSeek-V3 for text summarization.
-- **Ears:** OpenAI Whisper for voice transcription.
+- **Brain:** DeepSeek-V3 for project-aware summarization.
+- **Ears:** OpenAI Whisper for high-accuracy voice transcription.
+
+## Finding your Bot
+If you forget your bot's name, you can always check your Telegram app or run a query using your `TG_TOKEN`. The default username for this session was `@pocket_ag_bot`.
