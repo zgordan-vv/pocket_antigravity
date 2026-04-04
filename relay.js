@@ -6,8 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const os = require('os');
-const { exec } = require('child_process');
-const util = require('util');
+const { exec } = require('node:child_process');
+const util = require('node:util');
 const execPromise = util.promisify(exec);
 
 // Config
@@ -34,12 +34,19 @@ const openai = new OpenAI({
 // Terminal
 const shell = fs.existsSync('/bin/zsh') ? '/bin/zsh' : 'sh';
 const PARENT_DIR = path.resolve(process.cwd(), '..');
+
+// Bulletproof environment cloning and path restoration
+const ptyEnv = { 
+  ...process.env,
+  PATH: (process.env.PATH || '') + ':/bin:/usr/bin:/usr/local/bin'
+};
+
 const ptyProcess = pty.spawn(shell, [], {
   name: 'xterm-color',
   cols: 80,
   rows: 24,
   cwd: process.cwd(),
-  env: process.env,
+  env: ptyEnv,
 });
 
 let terminalBuffer = [];
