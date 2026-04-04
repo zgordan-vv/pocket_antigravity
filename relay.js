@@ -74,7 +74,7 @@ ptyProcess.onData(async (data) => {
       const summary = await summarize(output, "auto");
       lastSummary = summary;
       logToAudit("AUTO_RESULT", summary);
-      bot.telegram.sendMessage(ALLOWED_ID, `✅ *Task Complete*\n\n${summary}`, { parse_mode: 'Markdown' });
+      bot.telegram.sendMessage(ALLOWED_ID, `<b>✅ Task Complete</b>\n\n${summary}`, { parse_mode: 'HTML' });
     }
   }
 });
@@ -131,7 +131,7 @@ async function summarize(content, type = "status") {
   try {
     const completion = await deepseek.chat.completions.create({
       messages: [
-        { role: 'system', content: "Summarize terminal output concisely (3 bullets max). Know that files and git status are context." },
+        { role: 'system', content: "Summarize terminal output concisely using HTML tags (<b>, <i>, <code>). Maximum 3 bullets. Focus on actionable project context." },
         { role: 'user', content: `Context:\n${context}\n\nOutput:\n${content}` }
       ],
       model: 'deepseek-chat',
@@ -171,47 +171,46 @@ bot.action(/^cd:(.+)$/, async (ctx) => {
   ptyProcess.write(`cd "${targetPath}"\n`);
   
   ctx.answerCbQuery(`Switching to ${project}...`);
-  ctx.reply(`🚀 *Workspace Switch: ${project}*`);
+  ctx.reply(`🚀 <b>Workspace Switch: ${project}</b>`, { parse_mode: 'HTML' });
   
   // Quick delay for the cd to settle then summarize
   setTimeout(async () => {
     const summary = await summarize("Switched to project " + project, "status");
-    ctx.reply(`📊 *Project Audit*\n\n${summary}`, { parse_mode: 'Markdown' });
+    ctx.reply(`📊 <b>Project Audit</b>\n\n${summary}`, { parse_mode: 'HTML' });
   }, 1000);
 });
 
 bot.command('status', async (ctx) => {
   const summary = await summarize(terminalBuffer.slice(-200).join(''), "status");
   logToAudit("STATUS_CHECK", summary);
-  ctx.reply(`📊 *Current Status*\n\n${summary}`, { parse_mode: 'Markdown' });
+  ctx.reply(`📊 <b>Current Status</b>\n\n${summary}`, { parse_mode: 'HTML' });
 });
 
 bot.command('result', (ctx) => {
-  ctx.reply(`♻️ *Last Result (Cached)*\n\n${lastSummary}`, { parse_mode: 'Markdown' });
+  ctx.reply(`♻️ <b>Last Result (Cached)</b>\n\n${lastSummary}`, { parse_mode: 'HTML' });
 });
 
 async function handleInput(text, ctx) {
   // Intent Detection: Is this a command or a question?
-  const context = await getProjectContext();
   const intentCheck = await deepseek.chat.completions.create({
     messages: [
-      { role: 'system', content: "Classify the user input as 'COMMAND' (for things like ls, cd, npm, etc.) or 'QUESTION' (for natural language queries). Reply with ONLY the word." },
+      { role: 'system', content: "Classify user input: 'COMMAND' or 'QUESTION'. Natural language like 'what is in readme' is a QUESTION. Shell-like 'ls' is a COMMAND. Reply with ONLY the word." },
       { role: 'user', content: text }
     ],
     model: 'deepseek-chat',
   });
 
   if (intentCheck.choices[0].message.content.includes('QUESTION')) {
-    ctx.reply("🤔 *Consulting project...*");
+    ctx.reply("🤔 <i>Consulting project...</i>", { parse_mode: 'HTML' });
     const answer = await summarize(`The user asked: ${text}`, "status");
-    return ctx.reply(answer, { parse_mode: 'Markdown' });
+    return ctx.reply(answer, { parse_mode: 'HTML' });
   }
 
   // It's a command
   lastCommandIndex = terminalBuffer.length;
   isCommandRunning = true;
   ptyProcess.write(text + '\n');
-  ctx.reply(`Relayed: \`${text}\``, { parse_mode: 'Markdown' });
+  ctx.reply(`Relayed: <code>${text}</code>`, { parse_mode: 'HTML' });
 }
 
 bot.on('text', (ctx) => {
