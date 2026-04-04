@@ -190,24 +190,40 @@ bot.command('result', (ctx) => {
   ctx.reply(`♻️ *Last Result (Cached)*\n\n${lastSummary}`, { parse_mode: 'Markdown' });
 });
 
-function handleInput(text) {
+async function handleInput(text, ctx) {
+  // Intent Detection: Is this a command or a question?
+  const context = await getProjectContext();
+  const intentCheck = await deepseek.chat.completions.create({
+    messages: [
+      { role: 'system', content: "Classify the user input as 'COMMAND' (for things like ls, cd, npm, etc.) or 'QUESTION' (for natural language queries). Reply with ONLY the word." },
+      { role: 'user', content: text }
+    ],
+    model: 'deepseek-chat',
+  });
+
+  if (intentCheck.choices[0].message.content.includes('QUESTION')) {
+    ctx.reply("🤔 *Consulting project...*");
+    const answer = await summarize(`The user asked: ${text}`, "status");
+    return ctx.reply(answer, { parse_mode: 'Markdown' });
+  }
+
+  // It's a command
   lastCommandIndex = terminalBuffer.length;
   isCommandRunning = true;
   ptyProcess.write(text + '\n');
+  ctx.reply(`Relayed: \`${text}\``, { parse_mode: 'Markdown' });
 }
 
 bot.on('text', (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
-  handleInput(ctx.message.text);
-  ctx.reply(`Relayed: ${ctx.message.text}`);
+  handleInput(ctx.message.text, ctx);
 });
 
 bot.on('voice', async (ctx) => {
   ctx.reply("Transcribing...");
   const text = await transcribeVoice(ctx.message.voice.file_id);
   if (text) {
-    handleInput(text);
-    ctx.reply(`Relayed: ${text}`);
+    handleInput(text, ctx);
   } else {
     ctx.reply("STT failed.");
   }
