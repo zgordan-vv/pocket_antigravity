@@ -96,13 +96,14 @@ async function getPtyCwd() {
 async function getProjectContext() {
   try {
     const currentPath = await getPtyCwd();
-    const [git, files, readme, pkg] = await Promise.all([
+    const [git, files, readme, pkg, sourceSignal] = await Promise.all([
       execPromise('git status -s', { cwd: currentPath }).then(r => r.stdout).catch(() => 'No git'),
       execPromise('ls -t | head -n 8', { cwd: currentPath }).then(r => r.stdout).catch(() => 'No files'),
       execPromise('cat README.md | head -c 500', { cwd: currentPath }).then(r => r.stdout).catch(() => ''),
-      execPromise('cat package.json | head -c 500', { cwd: currentPath }).then(r => r.stdout).catch(() => '')
+      execPromise('cat package.json | head -c 1000', { cwd: currentPath }).then(r => r.stdout).catch(() => ''),
+      execPromise('find src lib -type f -maxdepth 3 2>/dev/null | grep -vE "layout|page" | head -n 3', { cwd: currentPath }).then(r => r.stdout).catch(() => '')
     ]);
-    return `LOCATION: ${currentPath}\nGit: ${git}\nFiles:\n${files}\nREADME Snippet:\n${readme}\nPackage Snippet:\n${pkg}`;
+    return `LOCATION: ${currentPath}\nGit Status: ${git}\nFiles:\n${files}\nTechnical Deps (package.json):\n${pkg}\nCustom Source Files:\n${sourceSignal}\nREADME (Caution: Might be boilerplate):\n${readme}`;
   } catch (e) {
     return "Context unavailable.";
   }
