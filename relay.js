@@ -202,8 +202,27 @@ async function handleInput(text, ctx) {
 
   if (intentCheck.choices[0].message.content.includes('QUESTION')) {
     ctx.reply("🤔 <i>Consulting project...</i>", { parse_mode: 'HTML' });
-    const answer = await summarize(`The user asked: ${text}`, "status");
-    return ctx.reply(answer, { parse_mode: 'HTML' });
+    let context = await getProjectContext();
+    
+    // Initial probe to see if we need a file
+    const probe = await deepseek.chat.completions.create({
+      messages: [
+        { role: 'system', content: "You are a project assistant. Looking at the file list, if you need to READ a file to answer the user's question, reply with 'READ: filename'. Otherwise, answer the question based on context. User question: " + text },
+        { role: 'user', content: context }
+      ],
+      model: 'deepseek-chat',
+    });
+
+    const response = probe.choices[0].message.content;
+    if (response.startsWith('READ:')) {
+      const fileName = response.replace('READ:', '').trim();
+      const currentPath = await getPtyCwd();
+      const fileContent = await execPromise(`cat "${fileName}" | head -n 50`, { cwd: currentPath }).then(r => r.stdout).catch(() => "File unreadable.");
+      const finalAnswer = await summarize(`The user asked: ${text}\n\nFile Content (${fileName}):\n${fileContent}`, "status");
+      return ctx.reply(`📖 <b>Reading ${fileName}...</b>\n\n${finalAnswer}`, { parse_mode: 'HTML' });
+    }
+
+    return ctx.reply(response, { parse_mode: 'HTML' });
   }
 
   // It's a command
