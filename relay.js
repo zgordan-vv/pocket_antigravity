@@ -210,13 +210,13 @@ async function handleInput(text, ctx) {
   const agentRunning = await hasActiveAgent();
 
   if (isQuestion && !agentRunning) {
-    ctx.reply("🤔 <i>Consulting project...</i>", { parse_mode: 'HTML' });
+    ctx.reply("🤔 <i>Antigravity is thinking...</i>", { parse_mode: 'HTML' });
     const context = await getProjectContext();
     
     // Safety Loop: Initial probe or direct answer
     const probe = await deepseek.chat.completions.create({
       messages: [
-        { role: 'system', content: "You are the Antigravity AI Agent. DO NOT GUESS or use filler language like 'might be'. If you lack information, return ONLY 'READ: filename'. Context:\n" + context },
+        { role: 'system', content: "You are the Antigravity AI Agent. Review the project context. If you need to read a file to answer correctly, reply ONLY with 'READ: filename'. Context:\n" + context },
         { role: 'user', content: text }
       ],
       model: 'deepseek-chat',
@@ -226,20 +226,28 @@ async function handleInput(text, ctx) {
     const readMatch = response.match(/READ:\s*([^\s\n]+)/);
 
     if (readMatch) {
-      const fileName = readMatch[1].replace(/[`]/g, ''); // Clean backticks
+      const fileName = readMatch[1].replace(/[`]/g, '');
       const currentPath = await getPtyCwd();
       const fileContent = await execPromise(`cat "${fileName}" | head -n 100`, { cwd: currentPath }).then(r => r.stdout).catch(() => "File unreadable.");
       const finalReply = await deepseek.chat.completions.create({
         messages: [
-          { role: 'system', content: "Based ONLY on the content below, provide a factual answer using HTML tags (<b>, <i>, <code>). Maximum 3 bullets. Be direct and avoid hedging. Source: " + fileName },
+          { role: 'system', content: "You are Antigravity, a powerful agentic AI coding assistant. Follow 'RAG for Humans' writing rules: be a knowledgeable friend, earn every sentence, be specific, and avoid hype words like 'revolutionary' or 'unleash'. Use HTML (<b>, <i>, <code>). Max 3 bullets. Context: " + fileName },
           { role: 'user', content: `Question: ${text}\n\nFile Content:\n${fileContent}` }
         ],
         model: 'deepseek-chat',
       });
-      return ctx.reply(`📖 <b>Reading ${fileName}...</b>\n\n${finalReply.choices[0].message.content}`, { parse_mode: 'HTML' });
+      return ctx.reply(`<b>Reading ${fileName}...</b>\n\n${finalReply.choices[0].message.content}`, { parse_mode: 'HTML' });
     }
 
-    return ctx.reply(response, { parse_mode: 'HTML' });
+    // Direct answer with full Antigravity persona
+    const finalAnswer = await deepseek.chat.completions.create({
+      messages: [
+        { role: 'system', content: "You are Antigravity, a powerful agentic AI coding assistant. Follow 'RAG for Humans' writing rules: be a knowledgeable friend, earn every sentence, be specific, and avoid hype words. Use HTML (<b>, <i>, <code>). Max 3 bullets. Context:\n" + context },
+        { role: 'user', content: text }
+      ],
+      model: 'deepseek-chat',
+    });
+    return ctx.reply(finalAnswer.choices[0].message.content, { parse_mode: 'HTML' });
   }
 
   // It's a command or an agent is already handling it
