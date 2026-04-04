@@ -84,13 +84,23 @@ function logToAudit(type, content) {
   fs.appendFileSync('session_audit.log', entry);
 }
 
+async function getPtyCwd() {
+  try {
+    const { stdout } = await execPromise(`lsof -p ${ptyProcess.pid} | grep cwd | awk '{print $9}'`);
+    return stdout.trim();
+  } catch (e) {
+    return process.cwd();
+  }
+}
+
 async function getProjectContext() {
   try {
+    const currentPath = await getPtyCwd();
     const [git, files] = await Promise.all([
-      execPromise('git status -s').then(r => r.stdout).catch(() => 'No git'),
-      execPromise('ls -t | head -n 5').then(r => r.stdout).catch(() => 'No files')
+      execPromise('git status -s', { cwd: currentPath }).then(r => r.stdout).catch(() => 'No git'),
+      execPromise('ls -t | head -n 5', { cwd: currentPath }).then(r => r.stdout).catch(() => 'No files')
     ]);
-    return `Context: Git=${git || 'clean'}, Files=${files}`;
+    return `LOCATION: ${currentPath}\nGit: ${git}\nRecent Files: ${files}`;
   } catch (e) {
     return "Context unavailable.";
   }
