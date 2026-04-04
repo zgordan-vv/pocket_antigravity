@@ -96,11 +96,13 @@ async function getPtyCwd() {
 async function getProjectContext() {
   try {
     const currentPath = await getPtyCwd();
-    const [git, files] = await Promise.all([
+    const [git, files, readme, pkg] = await Promise.all([
       execPromise('git status -s', { cwd: currentPath }).then(r => r.stdout).catch(() => 'No git'),
-      execPromise('ls -t | head -n 5', { cwd: currentPath }).then(r => r.stdout).catch(() => 'No files')
+      execPromise('ls -t | head -n 8', { cwd: currentPath }).then(r => r.stdout).catch(() => 'No files'),
+      execPromise('cat README.md | head -c 500', { cwd: currentPath }).then(r => r.stdout).catch(() => ''),
+      execPromise('cat package.json | head -c 500', { cwd: currentPath }).then(r => r.stdout).catch(() => '')
     ]);
-    return `LOCATION: ${currentPath}\nGit: ${git}\nRecent Files: ${files}`;
+    return `LOCATION: ${currentPath}\nGit: ${git}\nFiles:\n${files}\nREADME Snippet:\n${readme}\nPackage Snippet:\n${pkg}`;
   } catch (e) {
     return "Context unavailable.";
   }
@@ -210,14 +212,32 @@ async function handleInput(text, ctx) {
   if (isQuestion && !agentRunning) {
     ctx.reply("🤔 <i>Consulting project...</i>", { parse_mode: 'HTML' });
     const context = await getProjectContext();
-    const answer = await deepseek.chat.completions.create({
+    
+    // Safety Loop: Initial probe or direct answer
+    const probe = await deepseek.chat.completions.create({
       messages: [
-        { role: 'system', content: "You are the Antigravity AI Agent. Answer questions about the project concisely using HTML (<b>, <i>, <code>). Maximum 3 bullets. Context:\n" + context },
+        { role: 'system', content: "You are the Antigravity AI Agent. DO NOT GUESS. Review the context below. If you need to read a file to answer correctly, reply ONLY with 'READ: filename'. Context:\n" + context },
         { role: 'user', content: text }
       ],
       model: 'deepseek-chat',
     });
-    return ctx.reply(answer.choices[0].message.content, { parse_mode: 'HTML' });
+
+    const response = probe.choices[0].message.content;
+    if (response.startsWith('READ:')) {
+      const fileName = response.replace('READ:', '').trim();
+      const currentPath = await getPtyCwd();
+      const fileContent = await execPromise(`cat "${fileName}" | head -n 50`, { cwd: currentPath }).then(r => r.stdout).catch(() => "File unreadable.");
+      const finalReply = await deepseek.chat.completions.create({
+        messages: [
+          { role: 'system', content: "Based on the content below, answer the user's question concisely using HTML (<b>, <i>, <code>). Maximum 3 bullets. Source: " + fileName },
+          { role: 'user', content: `Question: ${text}\n\nFile Content:\n${fileContent}` }
+        ],
+        model: 'deepseek-chat',
+      });
+      return ctx.reply(`📖 <b>Reading ${fileName}...</b>\n\n${finalReply.choices[0].message.content}`, { parse_mode: 'HTML' });
+    }
+
+    return ctx.reply(response, { parse_mode: 'HTML' });
   }
 
   // It's a command or an agent is already handling it
