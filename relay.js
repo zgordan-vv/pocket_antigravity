@@ -6,12 +6,15 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const os = require('os');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 
 // Config
 const TG_TOKEN = process.env.TG_TOKEN;
 const ALLOWED_ID = parseInt(process.env.ALLOWED_USER_ID);
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
-const OPENAI_KEY = process.env.OPENAI_API_KEY; // For Whisper STT
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
 if (!TG_TOKEN || !ALLOWED_ID) {
   console.error("Missing TG_TOKEN or ALLOWED_USER_ID in .env");
@@ -28,6 +31,7 @@ const openai = new OpenAI({
   apiKey: OPENAI_KEY,
 });
 
+// Terminal
 const shell = 'zsh';
 const ptyProcess = pty.spawn(shell, [], {
   name: 'xterm-color',
@@ -39,136 +43,134 @@ const ptyProcess = pty.spawn(shell, [], {
 
 let terminalBuffer = [];
 let lastCommandIndex = 0;
-const MAX_BUFFER = 1000; // Increased window
+let isCommandRunning = false;
+let lastSummary = "No commands executed yet.";
+const MAX_BUFFER = 2000;
 
-ptyProcess.onData((data) => {
-  // Strip ANSI escape codes
+// Prompt Detection (for macOS/zsh)
+function isPrompt(data) {
+  return data.includes('% ') || data.includes('$ ');
+}
+
+ptyProcess.onData(async (data) => {
   const clean = data.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
   terminalBuffer.push(clean);
-  if (terminalBuffer.length > MAX_BUFFER) {
-    terminalBuffer.shift();
-    if (lastCommandIndex > 0) lastCommandIndex--;
-  }
+  if (terminalBuffer.length > MAX_BUFFER) terminalBuffer.shift();
+  
   process.stdout.write(data);
+
+  // Auto-Summarize when command finishes
+  if (isCommandRunning && isPrompt(clean)) {
+    isCommandRunning = false;
+    const output = terminalBuffer.slice(lastCommandIndex).join('');
+    if (output.length > 50) {
+      const summary = await summarize(output, "auto");
+      lastSummary = summary;
+      logToAudit("AUTO_RESULT", summary);
+      bot.telegram.sendMessage(ALLOWED_ID, `✅ *Task Complete*\n\n${summary}`, { parse_mode: 'Markdown' });
+    }
+  }
 });
 
-// Middlewares
-bot.use(async (ctx, next) => {
-  if (ctx.from.id !== ALLOWED_ID) {
-    console.warn(`Unauthorized access from ${ctx.from.id}`);
-    return ctx.reply("You are not authorized to control me.");
+// Logging Helper
+function logToAudit(type, content) {
+  const entry = `[${new Date().toISOString()}] ${type}:\n${content}\n${'-'.repeat(40)}\n`;
+  fs.appendFileSync('session_audit.log', entry);
+}
+
+// Project Context Skimmer
+async function getProjectContext() {
+  try {
+    const [git, files, pkg] = await Promise.all([
+      execPromise('git status -s').then(r => r.stdout).catch(() => 'No git'),
+      execPromise('ls -t | head -n 5').then(r => r.stdout).catch(() => 'No files'),
+      execPromise('cat package.json').then(r => r.stdout).catch(() => '{}')
+    ]);
+    return `PROJECT AT A GLANCE:\nGit: ${git}\nRecent Files: ${files}\nMetadata: ${pkg.slice(0, 200)}`;
+  } catch (e) {
+    return "Context unavailable.";
   }
-  return next();
-});
+}
 
 // STT Helper
 async function transcribeVoice(fileId) {
   try {
     const link = await bot.telegram.getFileLink(fileId);
     const audioPath = path.join(os.tmpdir(), `voice_${fileId}.oga`);
-    
-    // Download
-    const response = await axios({
-      method: 'get',
-      url: link.href,
-      responseType: 'stream',
-    });
+    const response = await axios({ method: 'get', url: link.href, responseType: 'stream' });
     const writer = fs.createWriteStream(audioPath);
     response.data.pipe(writer);
+    await new Promise((resolve) => writer.on('finish', resolve));
 
-    await new Promise((resolve, reject) => {
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-    });
-
-    // Whisper API
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(audioPath),
       model: "whisper-1",
     });
-
     fs.unlinkSync(audioPath);
     return transcription.text;
   } catch (err) {
-    console.error("STT Error:", err);
+    console.error("STT Error", err);
     return null;
   }
 }
 
-// Summarizer Helper
+// Summarizer
 async function summarize(content, type = "status") {
-  const prompt = type === "status" 
-    ? "Summarize the current terminal state in 3-5 concise bullet points. What is happening? Any errors or finishes?"
-    : "The following is the output of a specific command. Summarize what it did and if it was successful.";
-
+  const context = await getProjectContext();
+  const systemPrompt = "You are a senior developer assistant. Summarize the terminal output based on the project context. Be extremely concise (3 bullet points max). Focus on success/failure and next steps.";
+  
   try {
     const completion = await deepseek.chat.completions.create({
       messages: [
-        { role: 'system', content: "You are a terminal expert. Your summaries are brief, technical, and accurate. No fluff." },
-        { role: 'user', content: `${prompt}\n\nTerminal Output:\n${content}` }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Context:\n${context}\n\nRecent Output:\n${content}` }
       ],
       model: 'deepseek-chat',
     });
     return completion.choices[0].message.content;
   } catch (err) {
-    console.error("Summarizer Error:", err);
-    return "Failed to generate summary.";
+    return "Summary failed.";
   }
 }
 
-// Commands
-bot.start((ctx) => ctx.reply("Pocket Antigravity listening. Use /prompt, /status, or /result."));
-
-bot.command('prompt', async (ctx) => {
-  const text = ctx.message.text.replace('/prompt', '').trim();
-  if (text) {
-    lastCommandIndex = terminalBuffer.length;
-    ptyProcess.write(text + '\n');
-    ctx.reply(`Relayed: ${text}`);
-  } else {
-    ctx.reply("Send a command after /prompt or send a voice message.");
-  }
-});
+// Bot Commands
+bot.start((ctx) => ctx.reply("Pocket Antigravity (Smarter Edition) Active.\n\nWatching for % or $ prompts."));
 
 bot.command('status', async (ctx) => {
-  const snapshot = terminalBuffer.slice(-200).join(''); // Last 200 chunks
-  const summary = await summarize(snapshot, "status");
+  const summary = await summarize(terminalBuffer.slice(-200).join(''), "status");
+  logToAudit("STATUS_CHECK", summary);
   ctx.reply(`📊 *Current Status*\n\n${summary}`, { parse_mode: 'Markdown' });
 });
 
-bot.command('result', async (ctx) => {
-  const resultData = terminalBuffer.slice(lastCommandIndex).join('');
-  if (resultData.length < 10) {
-    return ctx.reply("Not enough new output for a result summary yet.");
-  }
-  const summary = await summarize(resultData, "result");
-  ctx.reply(`✅ *Last Result Summary*\n\n${summary}`, { parse_mode: 'Markdown' });
+bot.command('result', (ctx) => {
+  ctx.reply(`♻️ *Last Result (Cached)*\n\n${lastSummary}`, { parse_mode: 'Markdown' });
 });
 
-// Handle text messages directly
+function handleInput(text) {
+  lastCommandIndex = terminalBuffer.length;
+  isCommandRunning = true;
+  ptyProcess.write(text + '\n');
+}
+
 bot.on('text', (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
-  lastCommandIndex = terminalBuffer.length;
-  ptyProcess.write(ctx.message.text + '\n');
+  handleInput(ctx.message.text);
   ctx.reply(`Relayed: ${ctx.message.text}`);
 });
 
-// Handle voice
 bot.on('voice', async (ctx) => {
-  ctx.reply("Transcribing voice...");
+  ctx.reply("Transcribing...");
   const text = await transcribeVoice(ctx.message.voice.file_id);
   if (text) {
-    lastCommandIndex = terminalBuffer.length;
-    ptyProcess.write(text + '\n');
-    ctx.reply(`Transcribed & Relayed: ${text}`);
+    handleInput(text);
+    ctx.reply(`Relayed: ${text}`);
   } else {
-    ctx.reply("Could not transcribe voice.");
+    ctx.reply("STT failed.");
   }
 });
 
 bot.launch();
-console.log("Pocket Antigravity Relay started. Waiting for Telegram commands...");
+console.log("Smarter Relay loop active...");
 
-// Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
