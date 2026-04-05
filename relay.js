@@ -225,6 +225,7 @@ async function handleInput(text, ctx) {
 
     const response = probe.choices[0].message.content;
     const readMatch = response.match(/READ:\s*([^\s\n]+)/);
+    const replaceMatch = response.match(/REPLACE:\s*([^\s\n]+)/);
 
     if (readMatch) {
       const fileName = readMatch[1].replace(/[`]/g, '');
@@ -232,12 +233,27 @@ async function handleInput(text, ctx) {
       const fileContent = await execPromise(`cat "${fileName}" | head -n 100`, { cwd: currentPath }).then(r => r.stdout).catch(() => "File unreadable.");
       const finalReply = await deepseek.chat.completions.create({
         messages: [
-          { role: 'system', content: "You are Antigravity, a powerful agentic AI coding assistant. Follow 'RAG for Humans' writing rules: be a knowledgeable friend, earn every sentence, be specific, and avoid hype words like 'revolutionary' or 'unleash'. Use HTML (<b>, <i>, <code>). Max 3 bullets. Context: " + fileName },
-          { role: 'user', content: `Question: ${text}\n\nFile Content:\n${fileContent}` }
+          { role: 'system', content: "You are Antigravity. Be direct and specific. If you need to edit this file to fulfill the request, reply ONLY with: REPLACE: filename \\n TARGET: exact_old_text \\n WITH: new_text. Use 'RAG for Humans' style." },
+          { role: 'user', content: `Context from ${fileName}:\n${fileContent}\n\nTask: ${text}` }
         ],
         model: 'deepseek-chat',
       });
-      return ctx.reply(`<b>Reading ${fileName}...</b>\n\n${finalReply.choices[0].message.content}`, { parse_mode: 'HTML' });
+      
+      const editResponse = finalReply.choices[0].message.content;
+      if (editResponse.includes('REPLACE:')) {
+        const parts = editResponse.split('\n').map(p => p.trim());
+        const target = parts.find(p => p.startsWith('TARGET:')).replace('TARGET:', '').trim();
+        const replacement = parts.find(p => p.startsWith('WITH:')).replace('WITH:', '').trim();
+        const fullPath = path.join(currentPath, fileName);
+        const original = fs.readFileSync(fullPath, 'utf8');
+        if (original.includes(target)) {
+          fs.writeFileSync(fullPath, original.replace(target, replacement));
+          return ctx.reply(`<b>Edit Complete:</b> Marked task in <code>${fileName}</code>`, { parse_mode: 'HTML' });
+        }
+        return ctx.reply(`⚠️ Failed to find target text in <code>${fileName}</code>`, { parse_mode: 'HTML' });
+      }
+
+      return ctx.reply(`<b>Reading ${fileName}...</b>\n\n${editResponse}`, { parse_mode: 'HTML' });
     }
 
     // Direct answer with full Antigravity persona
