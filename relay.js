@@ -200,7 +200,13 @@ bot.action(/^cd:(.+)$/, async (ctx) => {
   isCommandRunning = true;
   
   ptyProcess.write(`cd "${targetPath}"\n`);
-  setTimeout(() => ptyProcess.write('audit\n'), 200);
+  
+  // Re-open the listener for the auto-audit
+  setTimeout(() => {
+    lastCommandIndex = terminalBuffer.length;
+    isCommandRunning = true;
+    ptyProcess.write('audit\n');
+  }, 400); 
   
   ctx.answerCbQuery(`Switching to ${project}...`);
   ctx.reply(`🚀 <b>Workspace Switch: ${project}</b>`, { parse_mode: 'HTML', ...dashboard });
