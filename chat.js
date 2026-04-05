@@ -24,29 +24,56 @@ const deepseek = axios.create({
 async function getProjectContext() {
   try {
     const cwd = process.cwd();
-    const [git, files, readme, pkg] = await Promise.all([
+    // Surgical Vision: Sniff out all .md plans in the root
+    const planFiles = await execPromise('find . -maxdepth 1 -name "*.md" | head -n 4', { cwd })
+      .then(r => r.stdout.split('\n').filter(Boolean))
+      .catch(() => []);
+    
+    const docContexts = await Promise.all(planFiles.map(f => 
+      execPromise(`cat "${f}" | head -c 800`, { cwd })
+        .then(r => `--- FILE: ${f} ---\n${r.stdout}\n`)
+        .catch(() => '')
+    ));
+
+    const [git, files, pkg] = await Promise.all([
       execPromise('git status -s', { cwd }).then(r => r.stdout).catch(() => 'No git'),
       execPromise('ls -F | head -n 12', { cwd }).then(r => r.stdout).catch(() => 'No files'),
-      execPromise('cat README.md 2>/dev/null | head -c 500', { cwd }).then(r => r.stdout).catch(() => ''),
       execPromise('cat package.json 2>/dev/null | head -c 800', { cwd }).then(r => r.stdout).catch(() => '')
     ]);
-    return `ACTUAL PROJECT DIRECTORY: ${cwd}\n\nGit Status: ${git}\nFiles:\n${files}\nTechnical Deps (package.json):\n${pkg}\nREADME Snippet:\n${readme}`;
+
+    return `ACTUAL PROJECT DIRECTORY: ${cwd}\n\nProject Plans & Docs:\n${docContexts.join('\n')}\nGit Status: ${git}\nFiles:\n${files}\nTechnical Deps (package.json):\n${pkg}`;
   } catch (e) {
     return `Context unavailable for ${process.cwd()}`;
   }
 }
 
+const conversationHistory = [];
+
 async function ask(question) {
   const context = await getProjectContext();
+  
+  // Keep the conversation flowing
+  conversationHistory.push({ role: 'user', content: question });
+  
+  // Limit history window to last 15 messages for focus
+  if (conversationHistory.length > 15) conversationHistory.shift();
+
   try {
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: `You are Antigravity, a powerful agentic AI coding assistant. Follow 'RAG for Humans' writing rules: be a knowledgeable friend, earn every sentence, be specific, and avoid hype. Use Markdown for formatting. Context:\n${context}` },
-        { role: 'user', content: question }
+        { role: 'system', content: `You are Antigravity, a powerful agentic AI coding assistant. You are in a LONG-RUNNING PAIR PROGRAMMING SESSION. Stay focused on the current task. NEVER re-introduce yourself or use generic welcome templates unless the conversation is just beginning. Use specific project evidence. Context:\n${context}` },
+        ...conversationHistory
       ]
     });
-    return response.data.choices[0].message.content;
+    
+    const answer = response.data.choices[0].message.content;
+    
+    // Store the answer for continuity
+    conversationHistory.push({ role: 'assistant', content: answer });
+    if (conversationHistory.length > 15) conversationHistory.shift();
+
+    return answer;
   } catch (err) {
     return "❌ Error: " + (err.response?.data?.error?.message || err.message);
   }
