@@ -70,8 +70,13 @@ ptyProcess.onData(async (data) => {
 
   if (isCommandRunning && isPrompt(clean)) {
     isCommandRunning = false;
-    const output = terminalBuffer.slice(lastCommandIndex).join('');
-    if (output.length > 50) {
+    const output = terminalBuffer.slice(lastCommandIndex).join('').trim();
+    if (output.length > 20) {
+      // 🚀 AGENT BYPASS: If the brain already answered, don't summarize it again
+      if (output.includes('📊 Project Pulse') || output.includes('Antigravity >')) {
+        return lastCtx.reply(`<code>${output}</code>`, { parse_mode: 'HTML', ...dashboard });
+      }
+      
       const summary = await summarize(output, "auto");
       lastSummary = summary;
       logToAudit("AUTO_RESULT", summary);
