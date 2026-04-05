@@ -72,13 +72,16 @@ ptyProcess.onData(async (data) => {
   if (isCommandRunning && isPrompt(clean)) {
     isCommandRunning = false;
     const output = terminalBuffer.slice(lastCommandIndex).join('').trim();
-    if (output.length > 10 && lastCtx) {
-      // 🚀 AGENT GUARD: If we are in the Brain session, NEVER summarize.
-      // The Brain already generates high-fidelity summaries.
+    if (output.length > 5 && lastCtx) {
+      // 🚀 BRAIN LOCKDOWN: If the agent is active, RELAY STAYS SILENT.
+      // We bypass the summarizer AND the 'Task Complete' boilerplate.
       const isAgentActive = output.includes('Antigravity >') || output.includes('📊 Project Pulse');
       
       if (isAgentActive) {
-        return lastCtx.reply(`<code>${output}</code>`, { parse_mode: 'HTML', ...dashboard });
+        return lastCtx.reply(`<code>${output}</code>`, { 
+          parse_mode: 'HTML', 
+          ...dashboard 
+        });
       }
       
       const summary = await summarize(output, "auto");
