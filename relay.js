@@ -168,7 +168,27 @@ bot.start((ctx) => {
   }
 });
 
-// ... (existing listProjects function)
+async function listProjects(ctx) {
+  try {
+    const folders = fs.readdirSync(PARENT_DIR, { withFileTypes: true })
+      .filter(i => i.isDirectory() && !i.name.startsWith('.')).map(i => i.name);
+    
+    if (folders.length === 0) return ctx.reply("No other projects found.", dashboard);
+    
+    const chunks = [];
+    for (let i = 0; i < folders.length; i += 2) {
+      const pair = folders.slice(i, i + 2).map(f => Markup.button.callback(f, `cd:${f}`));
+      chunks.push(pair);
+    }
+    
+    ctx.reply("📂 <b>Select Workspace:</b>", {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard(chunks)
+    });
+  } catch (e) {
+    ctx.reply("Failed to list projects.", dashboard);
+  }
+}
 
 bot.action(/^cd:(.+)$/, async (ctx) => {
   if (ctx.from.id != ALLOWED_ID) return;
