@@ -23,15 +23,16 @@ const deepseek = axios.create({
 
 async function getProjectContext() {
   try {
+    const cwd = process.cwd();
     const [git, files, readme, pkg] = await Promise.all([
-      execPromise('git status -s').then(r => r.stdout).catch(() => 'No git'),
-      execPromise('ls -t | head -n 8').then(r => r.stdout).catch(() => 'No files'),
-      execPromise('cat README.md | head -c 500').then(r => r.stdout).catch(() => ''),
-      execPromise('cat package.json | head -c 1000').then(r => r.stdout).catch(() => '')
+      execPromise('git status -s', { cwd }).then(r => r.stdout).catch(() => 'No git'),
+      execPromise('ls -F | head -n 12', { cwd }).then(r => r.stdout).catch(() => 'No files'),
+      execPromise('cat README.md 2>/dev/null | head -c 500', { cwd }).then(r => r.stdout).catch(() => ''),
+      execPromise('cat package.json 2>/dev/null | head -c 800', { cwd }).then(r => r.stdout).catch(() => '')
     ]);
-    return `Git Status: ${git}\nFiles:\n${files}\nTechnical Deps (package.json):\n${pkg}\nREADME Snippet:\n${readme}`;
+    return `ACTUAL PROJECT DIRECTORY: ${cwd}\n\nGit Status: ${git}\nFiles:\n${files}\nTechnical Deps (package.json):\n${pkg}\nREADME Snippet:\n${readme}`;
   } catch (e) {
-    return "Context unavailable.";
+    return `Context unavailable for ${process.cwd()}`;
   }
 }
 
