@@ -203,14 +203,22 @@ async function hasActiveAgent() {
 }
 
 async function handleInput(text, ctx) {
-  // 1. Is this a question? (contains ?, what, how, why, is, etc.)
-  const questionWords = ['what', 'why', 'how', 'is', 'who', 'where', 'purpose', 'goal', 'can you'];
-  const isQuestion = text.includes('?') || questionWords.some(w => text.toLowerCase().startsWith(w));
-  
-  // 2. Is there an agent (like node, claude, cursor) already running?
+  // 1. Ask DeepSeek for Intent (Routing)
   const agentRunning = await hasActiveAgent();
+  let intent = 'COMMAND';
+  
+  if (!agentRunning) {
+    const router = await deepseek.chat.completions.create({
+      messages: [
+        { role: 'system', content: "Classify user input: 'COMMAND' (ls, cd, npm, git) or 'AGENT' (natural language requests, questions, instructions like 'mark done'). Reply with ONLY the word." },
+        { role: 'user', content: text }
+      ],
+      model: 'deepseek-chat',
+    });
+    intent = router.choices[0].message.content.trim().toUpperCase();
+  }
 
-  if (isQuestion && !agentRunning) {
+  if (intent.includes('AGENT') && !agentRunning) {
     ctx.reply("🤔 <i>Antigravity is thinking...</i>", { parse_mode: 'HTML' });
     const context = await getProjectContext();
     
