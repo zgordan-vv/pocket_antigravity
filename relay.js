@@ -72,9 +72,12 @@ ptyProcess.onData(async (data) => {
   if (isCommandRunning && isPrompt(clean)) {
     isCommandRunning = false;
     const output = terminalBuffer.slice(lastCommandIndex).join('').trim();
-    if (output.length > 20 && lastCtx) {
-      // 🚀 AGENT BYPASS: If the brain already answered, don't summarize it again
-      if (output.includes('📊 Project Pulse') || output.includes('Antigravity >')) {
+    if (output.length > 10 && lastCtx) {
+      // 🚀 AGENT GUARD: If we are in the Brain session, NEVER summarize.
+      // The Brain already generates high-fidelity summaries.
+      const isAgentActive = output.includes('Antigravity >') || output.includes('📊 Project Pulse');
+      
+      if (isAgentActive) {
         return lastCtx.reply(`<code>${output}</code>`, { parse_mode: 'HTML', ...dashboard });
       }
       
