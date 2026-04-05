@@ -146,26 +146,42 @@ async function summarize(content, type = "status") {
   }
 }
 
-// Bot Commands
-bot.start((ctx) => ctx.reply("Pocket Antigravity Dashboard.\nCommands: /projects, /status, /result."));
+const dashboard = Markup.keyboard([
+  ['📁 Projects', '📊 Project Pulse'],
+  ['🧠 Antigravity Chat', '♻️ Last Result']
+]).resize();
 
-bot.command('projects', async (ctx) => {
-  try {
-    const items = fs.readdirSync(PARENT_DIR, { withFileTypes: true });
-    const folders = items.filter(i => i.isDirectory() && !i.name.startsWith('.')).map(i => i.name);
-    
-    if (folders.length === 0) return ctx.reply("No other projects found in the parent directory.");
-    
-    const buttons = folders.map(f => Markup.button.callback(f, `cd:${f}`));
-    // Group in pairs for better UI
-    const chunks = [];
-    for (let i = 0; i < buttons.length; i += 2) chunks.push(buttons.slice(i, i + 2));
-    
-    ctx.reply("📂 *Select Active Workspace:*", Markup.inlineKeyboard(chunks));
-  } catch (e) {
-    ctx.reply("Failed to list projects.");
+// Bot Commands
+bot.start((ctx) => {
+  if (ctx.from.id == ALLOWED_ID) {
+    ctx.reply('🚀 <b>Antigravity Terminal Bridge</b>\nConnected and ready for seaside coding.', { 
+      parse_mode: 'HTML',
+      ...dashboard
+    });
   }
 });
+
+async function listProjects(ctx) {
+  try {
+    const folders = fs.readdirSync(PARENT_DIR, { withFileTypes: true })
+      .filter(i => i.isDirectory() && !i.name.startsWith('.')).map(i => i.name);
+    
+    if (folders.length === 0) return ctx.reply("No other projects found.", dashboard);
+    
+    const chunks = [];
+    for (let i = 0; i < folders.length; i += 2) {
+      const pair = folders.slice(i, i + 2).map(f => Markup.button.callback(f, `cd:${f}`));
+      chunks.push(pair);
+    }
+    
+    ctx.reply("📂 <b>Select Workspace:</b>", {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard(chunks)
+    });
+  } catch (e) {
+    ctx.reply("Failed to list projects.", dashboard);
+  }
+}
 
 bot.action(/^cd:(.+)$/, async (ctx) => {
   const project = ctx.match[1];
@@ -175,45 +191,54 @@ bot.action(/^cd:(.+)$/, async (ctx) => {
   ptyProcess.write(`cd "${targetPath}"\n`);
   
   ctx.answerCbQuery(`Switching to ${project}...`);
-  ctx.reply(`🚀 <b>Workspace Switch: ${project}</b>`, { parse_mode: 'HTML' });
+  ctx.reply(`🚀 <b>Workspace Switch: ${project}</b>`, { parse_mode: 'HTML', ...dashboard });
   
-  // Quick delay for the cd to settle then summarize
   setTimeout(async () => {
-    const summary = await summarize("Switched to project " + project, "status");
-    ctx.reply(`📊 <b>Project Audit</b>\n\n${summary}`, { parse_mode: 'HTML' });
+    const context = await getProjectContext();
+    const summary = await summarize(context, "project_audit");
+    ctx.reply(`📊 <b>Project Audit</b>\n\n${summary}`, { parse_mode: 'HTML', ...dashboard });
   }, 1000);
 });
 
-bot.command('status', async (ctx) => {
-  const summary = await summarize(terminalBuffer.slice(-200).join(''), "status");
-  logToAudit("STATUS_CHECK", summary);
-  ctx.reply(`📊 <b>Current Status</b>\n\n${summary}`, { parse_mode: 'HTML' });
-});
-
-bot.command('result', (ctx) => {
-  ctx.reply(`♻️ <b>Last Result (Cached)</b>\n\n${lastSummary}`, { parse_mode: 'HTML' });
-});
-
 async function handleInput(text, ctx) {
-  // Pure Bridge: Every message is a direct terminal injection
   lastCommandIndex = terminalBuffer.length;
   isCommandRunning = true;
   ptyProcess.write(text + '\n');
-  ctx.reply(`Relayed: <code>${text}</code>`, { parse_mode: 'HTML' });
+  ctx.reply(`Relayed: <code>${text}</code>`, { parse_mode: 'HTML', ...dashboard });
 }
 
-bot.on('text', (ctx) => {
-  if (ctx.message.text.startsWith('/')) return;
-  handleInput(ctx.message.text, ctx);
+bot.on('text', async (ctx) => {
+  if (ctx.from.id != ALLOWED_ID) return;
+  const text = ctx.message.text;
+  if (text.startsWith('/')) return;
+
+  // Dashboard Routing
+  if (text === '📁 Projects') return listProjects(ctx);
+  if (text === '📊 Project Pulse') {
+    ctx.reply("🔍 <i>Auditing project state...</i>", { parse_mode: 'HTML' });
+    const context = await getProjectContext();
+    const summary = await summarize(context, "project_audit");
+    return ctx.reply(`📊 <b>Project Pulse</b>\n\n${summary}`, { parse_mode: 'HTML', ...dashboard });
+  }
+  if (text === '♻️ Last Result') {
+    return ctx.reply(`♻️ <b>Last Result (Cached)</b>\n\n${lastSummary}`, { parse_mode: 'HTML', ...dashboard });
+  }
+  if (text === '🧠 Antigravity Chat') {
+    ptyProcess.write('node chat.js\n');
+    return ctx.reply("🧠 <b>Antigravity Chat Activated</b>", { parse_mode: 'HTML', ...dashboard });
+  }
+
+  handleInput(text, ctx);
 });
 
 bot.on('voice', async (ctx) => {
+  if (ctx.from.id != ALLOWED_ID) return;
   ctx.reply("Transcribing...");
   const text = await transcribeVoice(ctx.message.voice.file_id);
   if (text) {
     handleInput(text, ctx);
   } else {
-    ctx.reply("STT failed.");
+    ctx.reply("STT failed.", dashboard);
   }
 });
 
