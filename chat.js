@@ -52,7 +52,7 @@ async function ask(question) {
 }
 
 // Interactive looping
-const readline = require('readline').createInterface({
+const rl = require('node:readline').createInterface({
   input: process.stdin,
   output: process.stdout,
   prompt: 'Antigravity > '
@@ -60,7 +60,7 @@ const readline = require('readline').createInterface({
 
 console.log("🚀 Antigravity CLI v1.0 (Mobile Ready)");
 console.log("Type your project questions below. Type 'exit' to quit.\n");
-readline.prompt();
+rl.prompt();
 
 rl.on('line', async (line) => {
   const input = line.trim();
