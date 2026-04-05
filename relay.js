@@ -38,7 +38,8 @@ const PARENT_DIR = path.resolve(process.cwd(), '..');
 // Bulletproof environment cloning and path restoration
 function isPrompt(data) {
   // Detecting standard shell (%), and the new Antigravity CLI prompt (>)
-  return /[%$\]>] /.test(data);
+  // More flexible detection to capture 'Antigravity >' even at start/end of chunks
+  return /[%$\]>]/.test(data.trim());
 }
 
 const ptyProcess = pty.spawn(shell, [], {
@@ -59,11 +60,6 @@ let lastCommandIndex = 0;
 let isCommandRunning = false;
 let lastSummary = "No commands executed yet.";
 const MAX_BUFFER = 2000;
-
-// Prompt Detection (macOS/zsh)
-function isPrompt(data) {
-  return data.includes('% ') || data.includes('$ ');
-}
 
 ptyProcess.onData(async (data) => {
   const clean = data.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');

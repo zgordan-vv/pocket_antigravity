@@ -62,12 +62,26 @@ console.log("🚀 Antigravity CLI v1.0 (Mobile Ready)");
 console.log("Type your project questions below. Type 'exit' to quit.\n");
 readline.prompt();
 
-readline.on('line', async (line) => {
+rl.on('line', async (line) => {
   const input = line.trim();
+  if (!input) {
+    rl.prompt();
+    return;
+  }
   if (input.toLowerCase() === 'exit') process.exit(0);
-  if (input) {
+
+  // Command Execution (Surgical)
+  if (input.startsWith('cd ')) {
+    const target = input.replace('cd ', '').replace(/['"]/g, '').trim();
+    try {
+      process.chdir(target);
+      console.log(`\n🚀 Moved to: ${process.cwd()}\n`);
+    } catch (err) {
+      console.log(`\n❌ Error: ${err.message}\n`);
+    }
+  } else {
     const answer = await ask(input);
     console.log(`\n${answer}\n`);
   }
-  readline.prompt();
+  rl.prompt();
 });
