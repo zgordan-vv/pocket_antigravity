@@ -72,12 +72,13 @@ ptyProcess.onData(async (data) => {
   if (isCommandRunning && isPrompt(clean)) {
     isCommandRunning = false;
     const output = terminalBuffer.slice(lastCommandIndex).join('').trim();
-    if (output.length > 5 && lastCtx) {
-      // 🚀 BRAIN LOCKDOWN: If the agent is active, RELAY STAYS SILENT.
-      // We bypass the summarizer AND the 'Task Complete' boilerplate.
+    if (output.length > 2 && lastCtx) {
+      // 🚀 SURGICAL LOCKDOWN: If the Agent is active, we act as a PURE PIPE.
+      // We check for the prompt OR the audit header.
       const isAgentActive = output.includes('Antigravity >') || output.includes('📊 Project Pulse');
       
       if (isAgentActive) {
+        // We deliver raw monospaced text ONLY. No boilerplate. No drift.
         return lastCtx.reply(`<code>${output}</code>`, { 
           parse_mode: 'HTML', 
           ...dashboard 
