@@ -47,32 +47,55 @@ async function getProjectContext() {
   }
 }
 
-const conversationHistory = [];
-
 async function ask(question) {
   const context = await getProjectContext();
-  
-  // Keep the conversation flowing
   conversationHistory.push({ role: 'user', content: question });
   
-  // Limit history window to last 15 messages for focus
   if (conversationHistory.length > 15) conversationHistory.shift();
 
   try {
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: `You are Antigravity, a powerful agentic AI coding assistant. You are in a LONG-RUNNING PAIR PROGRAMMING SESSION. Stay focused on the current task. NEVER re-introduce yourself or use generic welcome templates unless the conversation is just beginning. Use specific project evidence. Context:\n${context}` },
+        { role: 'system', content: `You are Antigravity, a powerful agentic AI coding assistant. You have REAL HANDS.
+If you need to see a file, output exactly: [READ: path/to/file]
+If you need to create/update a file, output exactly: [WRITE: path/to/file, CONTENT: ...full content...]
+You will then receive the result in the next turn. 
+NEVER hallucinate results; always use the [READ] tool to verify. 
+Your context is: ${context}` },
         ...conversationHistory
       ]
     });
     
-    const answer = response.data.choices[0].message.content;
+    let answer = response.data.choices[0].message.content;
+
+    // Surgical Tool Execution Loop
+    if (answer.includes('[READ:')) {
+      const filePath = answer.match(/\[READ: (.+?)\]/)[1];
+      try {
+        const content = fs.readFileSync(path.resolve(process.cwd(), filePath), 'utf8');
+        return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Now finish your original response based on this file content.)`);
+      } catch (e) {
+        return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`);
+      }
+    }
+
+    if (answer.includes('[WRITE:')) {
+      const match = answer.match(/\[WRITE: (.+?), CONTENT: ([\s\S]+?)\]/);
+      if (match) {
+        const filePath = match[1];
+        const content = match[2];
+        try {
+          fs.writeFileSync(path.resolve(process.cwd(), filePath), content);
+          return await ask(`--- SUCCESS: Wrote to ${filePath} ---`);
+        } catch (e) {
+          return await ask(`--- ERROR: Failed to write ${filePath}: ${e.message} ---`);
+        }
+      }
+    }
     
-    // Store the answer for continuity
     conversationHistory.push({ role: 'assistant', content: answer });
     if (conversationHistory.length > 15) conversationHistory.shift();
-
     return answer;
   } catch (err) {
     return "❌ Error: " + (err.response?.data?.error?.message || err.message);
