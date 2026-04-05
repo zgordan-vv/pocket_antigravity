@@ -36,18 +36,23 @@ const shell = fs.existsSync('/bin/zsh') ? '/bin/zsh' : 'sh';
 const PARENT_DIR = path.resolve(process.cwd(), '..');
 
 // Bulletproof environment cloning and path restoration
-const ptyEnv = { 
-  ...process.env,
-  PATH: (process.env.PATH || '') + ':/bin:/usr/bin:/usr/local/bin'
-};
+function isPrompt(data) {
+  // Detecting standard shell (%), and the new Antigravity CLI prompt (>)
+  return /[%$\]>] /.test(data);
+}
 
 const ptyProcess = pty.spawn(shell, [], {
   name: 'xterm-color',
   cols: 80,
   rows: 24,
   cwd: process.cwd(),
-  env: ptyEnv,
+  env: process.env
 });
+
+// Auto-Launch: Start the Antigravity CLI brain by default
+setTimeout(() => {
+  ptyProcess.write('node chat.js\n');
+}, 500);
 
 let terminalBuffer = [];
 let lastCommandIndex = 0;
