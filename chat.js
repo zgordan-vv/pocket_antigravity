@@ -71,7 +71,11 @@ rl.on('line', async (line) => {
   if (input.toLowerCase() === 'exit') process.exit(0);
 
   // Command Execution (Surgical)
-  if (input.startsWith('cd ')) {
+  if (input === 'audit') {
+    const context = await getProjectContext();
+    const answer = await ask(`Perform a project audit based on this context. 3-bullet summary of goals and status. Context:\n${context}`);
+    console.log(`📊 Project Pulse\n\n${answer}`);
+  } else if (input.startsWith('cd ')) {
     const target = input.replace('cd ', '').replace(/['"]/g, '').trim();
     try {
       process.chdir(target);

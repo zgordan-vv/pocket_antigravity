@@ -188,16 +188,14 @@ bot.action(/^cd:(.+)$/, async (ctx) => {
   const targetPath = path.join(PARENT_DIR, project);
   
   lastCommandIndex = terminalBuffer.length;
+  isCommandRunning = true;
+  
+  // Hand off the the move and the audit to the internal brain
   ptyProcess.write(`cd "${targetPath}"\n`);
+  setTimeout(() => ptyProcess.write('audit\n'), 200);
   
   ctx.answerCbQuery(`Switching to ${project}...`);
   ctx.reply(`🚀 <b>Workspace Switch: ${project}</b>`, { parse_mode: 'HTML', ...dashboard });
-  
-  setTimeout(async () => {
-    const context = await getProjectContext();
-    const summary = await summarize(context, "project_audit");
-    ctx.reply(`📊 <b>Project Audit</b>\n\n${summary}`, { parse_mode: 'HTML', ...dashboard });
-  }, 1000);
 });
 
 async function handleInput(text, ctx) {
@@ -215,10 +213,10 @@ bot.on('text', async (ctx) => {
   // Dashboard Routing
   if (text === '📁 Projects') return listProjects(ctx);
   if (text === '📊 Project Pulse') {
-    ctx.reply("🔍 <i>Auditing project state...</i>", { parse_mode: 'HTML' });
-    const context = await getProjectContext();
-    const summary = await summarize(context, "project_audit");
-    return ctx.reply(`📊 <b>Project Pulse</b>\n\n${summary}`, { parse_mode: 'HTML', ...dashboard });
+    lastCommandIndex = terminalBuffer.length;
+    isCommandRunning = true;
+    ptyProcess.write('audit\n');
+    return;
   }
   if (text === '♻️ Last Result') {
     return ctx.reply(`♻️ <b>Last Result (Cached)</b>\n\n${lastSummary}`, { parse_mode: 'HTML', ...dashboard });
