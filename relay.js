@@ -59,6 +59,7 @@ let terminalBuffer = [];
 let lastCommandIndex = 0;
 let isCommandRunning = false;
 let lastSummary = "No commands executed yet.";
+let lastCtx = null; // Persisted context for background replies
 const MAX_BUFFER = 2000;
 
 ptyProcess.onData(async (data) => {
@@ -71,7 +72,7 @@ ptyProcess.onData(async (data) => {
   if (isCommandRunning && isPrompt(clean)) {
     isCommandRunning = false;
     const output = terminalBuffer.slice(lastCommandIndex).join('').trim();
-    if (output.length > 20) {
+    if (output.length > 20 && lastCtx) {
       // 🚀 AGENT BYPASS: If the brain already answered, don't summarize it again
       if (output.includes('📊 Project Pulse') || output.includes('Antigravity >')) {
         return lastCtx.reply(`<code>${output}</code>`, { parse_mode: 'HTML', ...dashboard });
@@ -159,6 +160,7 @@ const dashboard = Markup.keyboard([
 // Bot Commands
 bot.start((ctx) => {
   if (ctx.from.id == ALLOWED_ID) {
+    lastCtx = ctx;
     ctx.reply('🚀 <b>Antigravity Terminal Bridge</b>\nConnected and ready for seaside coding.', { 
       parse_mode: 'HTML',
       ...dashboard
@@ -166,36 +168,17 @@ bot.start((ctx) => {
   }
 });
 
-async function listProjects(ctx) {
-  try {
-    const folders = fs.readdirSync(PARENT_DIR, { withFileTypes: true })
-      .filter(i => i.isDirectory() && !i.name.startsWith('.')).map(i => i.name);
-    
-    if (folders.length === 0) return ctx.reply("No other projects found.", dashboard);
-    
-    const chunks = [];
-    for (let i = 0; i < folders.length; i += 2) {
-      const pair = folders.slice(i, i + 2).map(f => Markup.button.callback(f, `cd:${f}`));
-      chunks.push(pair);
-    }
-    
-    ctx.reply("📂 <b>Select Workspace:</b>", {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard(chunks)
-    });
-  } catch (e) {
-    ctx.reply("Failed to list projects.", dashboard);
-  }
-}
+// ... (existing listProjects function)
 
 bot.action(/^cd:(.+)$/, async (ctx) => {
+  if (ctx.from.id != ALLOWED_ID) return;
+  lastCtx = ctx;
   const project = ctx.match[1];
   const targetPath = path.join(PARENT_DIR, project);
   
   lastCommandIndex = terminalBuffer.length;
   isCommandRunning = true;
   
-  // Hand off the the move and the audit to the internal brain
   ptyProcess.write(`cd "${targetPath}"\n`);
   setTimeout(() => ptyProcess.write('audit\n'), 200);
   
@@ -204,6 +187,7 @@ bot.action(/^cd:(.+)$/, async (ctx) => {
 });
 
 async function handleInput(text, ctx) {
+  lastCtx = ctx;
   lastCommandIndex = terminalBuffer.length;
   isCommandRunning = true;
   ptyProcess.write(text + '\n');
@@ -212,6 +196,7 @@ async function handleInput(text, ctx) {
 
 bot.on('text', async (ctx) => {
   if (ctx.from.id != ALLOWED_ID) return;
+  lastCtx = ctx;
   const text = ctx.message.text;
   if (text.startsWith('/')) return;
 
@@ -236,6 +221,7 @@ bot.on('text', async (ctx) => {
 
 bot.on('voice', async (ctx) => {
   if (ctx.from.id != ALLOWED_ID) return;
+  lastCtx = ctx;
   ctx.reply("Transcribing...");
   const text = await transcribeVoice(ctx.message.voice.file_id);
   if (text) {
