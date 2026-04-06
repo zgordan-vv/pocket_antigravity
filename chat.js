@@ -25,61 +25,54 @@ async function getProjectContext() {
   let context = "";
   try {
     const cwd = process.cwd();
-    const planFiles = Array.from(new Set(['PRD.md', 'implementation_plan.md', 'README.md']))
-      .filter(f => fs.existsSync(path.resolve(cwd, f)));
+    const docs = ['PRD.md', 'implementation_plan.md', 'README.md', 'package.json'];
     
-    for (const f of planFiles) {
-      try {
-        const content = fs.readFileSync(path.resolve(cwd, f), 'utf8').substring(0, 800);
-        context += `\n--- DOC: ${f} (first 800 chars) ---\n${content}\n`;
-      } catch (e) {}
+    for (const f of docs) {
+      if (fs.existsSync(path.resolve(cwd, f))) {
+        const content = fs.readFileSync(path.resolve(cwd, f), 'utf8');
+        context += `\n--- FILE: ${f} ---\n${content}\n`;
+      }
     }
 
-    const { stdout: tree } = await execPromise('find . -maxdepth 2 -not -path "*/.*" -not -path "*/node_modules/*" | head -n 150', { cwd });
-    context += `\nMAP:\n${tree}\n`;
+    const { stdout: tree } = await execPromise('find . -maxdepth 4 -not -path "*/.*" -not -path "*/node_modules/*"', { cwd });
+    context += `\nPROJECT STRUCTURE:\n${tree}\n`;
 
-    const { stdout: status } = await execPromise('git status -s', { cwd }).catch(() => ({ stdout: 'No git' }));
-    context += `\nGIT:\n${status}\n`;
+    const { stdout: status } = await execPromise('git status -s', { cwd }).catch(() => ({ stdout: '' }));
+    context += `\nGIT STATUS:\n${status}\n`;
 
-  } catch (e) {
-    console.error("Context Error:", e.message);
-  }
+  } catch (e) {}
   return context;
 }
 
 const conversationHistory = [];
 
-async function ask(question, context, depth = 0) {
-  if (depth > 30) {
-    console.error("⚠️ Max recursion depth (30) reached.");
-    return "⚠️ Error: The AI reached the execution limit for this turn.";
-  }
+async function ask(question, depth = 0) {
+  if (depth > 50) return "⚠️ Execution limit reached.";
   
+  const context = await getProjectContext();
   conversationHistory.push({ role: 'user', content: question });
-  if (conversationHistory.length > 20) conversationHistory.splice(0, 2);
+  if (conversationHistory.length > 30) conversationHistory.shift();
 
   try {
-    console.log(`\n🧠 Antigravity is thinking... (Depth: ${depth})`);
+    console.log(`\n🧠 Antigravity is thinking...`);
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: `You are Antigravity, an autonomous agent.
-TOOLS:
-- [READ: path]: Returns content or lists directory.
-- [WRITE: path, CONTENT: text]: Overwrites file.
+        { role: 'system', content: `You are Antigravity, an autonomous agent with local filesystem access. 
 
-RULES:
-1. ONLY response with the tool call if using a tool.
-2. BE CONCISE. Avoid filler.
-3. Project Map:
+TOOLS:
+- [READ: path]: Returns file content or directory listing.
+- [WRITE: path, CONTENT: text]: Overwrites file with full content.
+
+PROJECT CONTEXT:
 ${context}` },
         ...conversationHistory
       ]
-    }, { timeout: 60000 });
+    }, { timeout: 300000 });
     
     let answer = response.data.choices[0].message.content.trim();
 
-    // Surgical Tool Detection
+    // Tool Detection
     if (answer.includes('[READ: ')) {
       const start = answer.indexOf('[READ: ') + 7;
       const end = answer.indexOf(']', start);
@@ -89,34 +82,25 @@ ${context}` },
         try {
           const fullPath = path.resolve(process.cwd(), filePath);
           const stats = fs.statSync(fullPath);
+          const result = stats.isDirectory() ? fs.readdirSync(fullPath).join('\n') : fs.readFileSync(fullPath, 'utf8');
           
-          let toolResult = "";
-          if (stats.isDirectory()) {
-            const files = fs.readdirSync(fullPath);
-            toolResult = `--- DIRECTORY LISTING: ${filePath} ---\n${files.join('\n')}\n\n(Explore further or finalize.)`;
-          } else {
-            const content = fs.readFileSync(fullPath, 'utf8');
-            toolResult = `--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Verify and finalize.)`;
-          }
-
           conversationHistory.push({ role: 'assistant', content: answer });
-          return await ask(toolResult, context, depth + 1);
+          return await ask(`--- RESULT for READ ${filePath} ---\n${result}`, depth + 1);
         } catch (e) {
           conversationHistory.push({ role: 'assistant', content: answer });
-          return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`, context, depth + 1);
+          return await ask(`--- ERROR: ${e.message} ---`, depth + 1);
         }
       }
     }
 
     if (answer.includes('[WRITE: ')) {
       const blockStart = answer.indexOf('[WRITE: ');
-      const contentKey = 'CONTENT: ';
-      const contentIdx = answer.indexOf(contentKey, blockStart);
+      const contentIdx = answer.indexOf('CONTENT: ', blockStart);
       const closeIdx = answer.lastIndexOf(']');
 
       if (contentIdx !== -1 && closeIdx > contentIdx) {
         const pathPart = answer.substring(blockStart + 8, answer.indexOf(',', blockStart)).trim().replace(/['"]/g, '');
-        const fileContent = answer.substring(contentIdx + contentKey.length, closeIdx).trim();
+        const fileContent = answer.substring(contentIdx + 9, closeIdx).trim();
         
         console.log(`🛠️ Tool Calling: WRITE ${pathPart}`);
         try {
@@ -125,11 +109,11 @@ ${context}` },
           fs.writeFileSync(fullPath, fileContent);
           console.log(`✅ Success: Physical write to ${pathPart} complete.`);
           
-          conversationHistory.push({ role: 'assistant', content: `[TOOL_METADATA: Wrote ${fileContent.length} chars to ${pathPart}]` });
-          return await ask(`--- SUCCESS: Wrote to ${pathPart}. The file is now correct. ---`, context, depth + 1);
+          conversationHistory.push({ role: 'assistant', content: answer });
+          return await ask(`--- SUCCESS: Wrote ${pathPart} ---`, depth + 1);
         } catch (e) {
           conversationHistory.push({ role: 'assistant', content: answer });
-          return await ask(`--- ERROR: Failed to write ${pathPart}: ${e.message} ---`, context, depth + 1);
+          return await ask(`--- ERROR: ${e.message} ---`, depth + 1);
         }
       }
     }
@@ -139,9 +123,6 @@ ${context}` },
   } catch (err) {
     const errorMsg = err.response?.data?.error?.message || err.message;
     console.error(`❌ Brain Error:`, errorMsg);
-    if (errorMsg.includes('aborted') || errorMsg.includes('timeout')) {
-      return "❌ Error: The AI brain timed out. Please try your command again.";
-    }
     return "❌ Error: " + errorMsg;
   }
 }
