@@ -92,14 +92,20 @@ ${context}` },
           const fullPath = path.resolve(process.cwd(), filePath);
           const stats = fs.statSync(fullPath);
           
+          let toolResult = "";
           if (stats.isDirectory()) {
             const files = fs.readdirSync(fullPath);
-            return await ask(`--- DIRECTORY LISTING: ${filePath} ---\n${files.join('\n')}\n\n(Explore further or finalize.)`, depth + 1);
+            toolResult = `--- DIRECTORY LISTING: ${filePath} ---\n${files.join('\n')}\n\n(Explore further or finalize.)`;
+          } else {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            toolResult = `--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Verify and finalize.)`;
           }
-          
-          const content = fs.readFileSync(fullPath, 'utf8');
-          return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Verify and finalize.)`, depth + 1);
+
+          // Push tool call to history but keep it lean
+          conversationHistory.push({ role: 'assistant', content: answer });
+          return await ask(toolResult, depth + 1);
         } catch (e) {
+          conversationHistory.push({ role: 'assistant', content: answer });
           return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`, depth + 1);
         }
       }
@@ -121,15 +127,24 @@ ${context}` },
           fs.mkdirSync(path.dirname(fullPath), { recursive: true });
           fs.writeFileSync(fullPath, fileContent);
           console.log(`✅ Success: Physical write to ${pathPart} complete.`);
+          
+          conversationHistory.push({ role: 'assistant', content: `[TOOL_METADATA: Wrote ${fileContent.length} chars to ${pathPart}]` });
           return await ask(`--- SUCCESS: Wrote to ${pathPart}. The file is now correct. ---`, depth + 1);
         } catch (e) {
+          conversationHistory.push({ role: 'assistant', content: answer });
           return await ask(`--- ERROR: Failed to write ${pathPart}: ${e.message} ---`, depth + 1);
         }
       }
     }
     
+    // Final response cleanup: keep history lean
     conversationHistory.push({ role: 'assistant', content: answer });
-    if (conversationHistory.length > 20) conversationHistory.shift();
+    
+    // Auto-Truncate History to prevent token bloat
+    if (conversationHistory.length > 20) {
+      conversationHistory.splice(0, 2); // Remove oldest user/assistant pair
+    }
+
     return answer;
   } catch (err) {
     const errorMsg = err.response?.data?.error?.message || err.message;
