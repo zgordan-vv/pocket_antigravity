@@ -23,6 +23,8 @@ async function ask(question, depth = 0) {
   if (depth > 50) return "⚠️ Execution limit reached.";
   
   const cwd = process.cwd();
+  const parent = path.dirname(cwd);
+  const neighbors = fs.readdirSync(parent).filter(f => fs.statSync(path.join(parent, f)).isDirectory());
   const rootFiles = fs.readdirSync(cwd).slice(0, 50).join(', ');
 
   conversationHistory.push({ role: 'user', content: question });
@@ -33,15 +35,17 @@ async function ask(question, depth = 0) {
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: `You are Antigravity, an autonomous agent.
-LOCATION: ${cwd}
+        { role: 'system', content: `You are Antigravity, an autonomous agentic bridge for remote development.
+WORKSPACE ROOT: ${parent}
+NEIGHBOR PROJECTS: ${neighbors.join(', ')}
+CURRENT PROJECT: ${cwd}
 ROOT FILES: ${rootFiles}
 
 TOOLS:
 - [READ: path]: Returns file content or directory listing.
 - [WRITE: path, CONTENT: text]: Physical file write.
 
-RULE: Stay within the project scope unless instructed otherwise.` },
+GOAL: Efficiently manage and move between workspace projects as instructed.` },
         ...conversationHistory
       ]
     }, { timeout: 300000 });
