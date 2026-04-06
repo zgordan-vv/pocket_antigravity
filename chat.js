@@ -53,53 +53,58 @@ async function ask(question) {
   const context = await getProjectContext();
   conversationHistory.push({ role: 'user', content: question });
   
-  if (conversationHistory.length > 15) conversationHistory.shift();
+  if (conversationHistory.length > 20) conversationHistory.shift();
 
   try {
+    console.log(`\n🧠 Antigravity is thinking...`);
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: `You are Antigravity, a powerful agentic AI coding assistant. You have REAL HANDS.
-If you need to see a file, output exactly: [READ: path/to/file]
-If you need to create/update a file, output exactly: [WRITE: path/to/file, CONTENT: ...full content...]
-You will then receive the result in the next turn. 
-NEVER hallucinate results; always use the [READ] tool to verify. 
-Your context is: ${context}` },
+        { role: 'system', content: `You are Antigravity, a powerful agentic AI assistant. Use [READ: path] to see files and [WRITE: path, CONTENT: text] to create/edit them. 
+IMPORTANT: When using [WRITE], ensure you provide the ENTIRE content of the file. 
+Context: ${context}` },
         ...conversationHistory
       ]
-    });
+    }, { timeout: 45000 });
     
     let answer = response.data.choices[0].message.content;
 
     // Surgical Tool Execution Loop
     if (answer.includes('[READ:')) {
       const filePath = answer.match(/\[READ: (.+?)\]/)[1];
+      console.log(`🛠️ Tool Calling: READ ${filePath}`);
       try {
         const content = fs.readFileSync(path.resolve(process.cwd(), filePath), 'utf8');
-        return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Now finish your original response based on this file content.)`);
+        return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Complete your response now.)`);
       } catch (e) {
         return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`);
       }
     }
 
     if (answer.includes('[WRITE:')) {
-      const match = answer.match(/\[WRITE: (.+?), CONTENT: ([\s\S]+?)\]/);
-      if (match) {
-        const filePath = match[1];
-        const content = match[2];
-        try {
-          fs.writeFileSync(path.resolve(process.cwd(), filePath), content);
-          return await ask(`--- SUCCESS: Wrote to ${filePath} ---`);
-        } catch (e) {
-          return await ask(`--- ERROR: Failed to write ${filePath}: ${e.message} ---`);
-        }
+      console.log(`🛠️ Tool Calling: WRITE physical file...`);
+      const pathStart = answer.indexOf('[WRITE: ') + 8;
+      const pathEnd = answer.indexOf(',', pathStart);
+      const contentStart = answer.indexOf('CONTENT: ', pathEnd) + 9;
+      const totalLength = answer.lastIndexOf(']');
+      
+      const filePath = answer.substring(pathStart, pathEnd).trim();
+      const content = answer.substring(contentStart, totalLength).trim();
+
+      try {
+        fs.writeFileSync(path.resolve(process.cwd(), filePath), content);
+        console.log(`✅ Success: Physical write to ${filePath} complete.`);
+        return await ask(`--- SUCCESS: Wrote to ${filePath} ---`);
+      } catch (e) {
+        return await ask(`--- ERROR: Failed to write ${filePath}: ${e.message} ---`);
       }
     }
     
     conversationHistory.push({ role: 'assistant', content: answer });
-    if (conversationHistory.length > 15) conversationHistory.shift();
+    if (conversationHistory.length > 20) conversationHistory.shift();
     return answer;
   } catch (err) {
+    console.error(`❌ Brain Error:`, err.message);
     return "❌ Error: " + (err.response?.data?.error?.message || err.message);
   }
 }

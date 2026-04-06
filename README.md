@@ -1,45 +1,48 @@
-# Pocket Antigravity 🚀
+# 🌊 Pocket Antigravity v1.0 (Seaside Ready)
 
-A Telegram-powered remote control for your local terminal. Ship code from your phone, get smart summaries of long terminal outputs, and relay voice commands directly to your local AI agent.
+**Pocket Antigravity** is a high-fidelity, mobile-first terminal bridge for Telegram. It turns your phone into a remote control for your local development environment, making it perfect for for-the-grid coding while walking or away from your desk.
 
-## Features
-- 🎙️ **Voice Commands:** Send voice messages to your terminal (auto-transcribed via OpenAI Whisper).
-- 📊 **Smart Status:** Get a DeepSeek-powered summary of what's happening in your terminal right now.
-- ✅ **Command Results:** See a summary of the *actual* result of your last command, not just the raw logs.
-- 🔒 **Security:** Locked to your specific Telegram User ID.
+## 🚀 Key Features
 
-## Prerequisites
-1. **Node.js** installed.
-2. **Telegram Bot Token** (from [@BotFather](https://t.me/BotFather)).
-3. **DeepSeek API Key** (for summarization).
-4. **OpenAI API Key** (for Whisper STT).
+- **📱 Seaside Dashboard:** Persistent UI buttons for one-tap project management.
+- **🧠 Brain-Bridge Architecture:** A specialized agent CLI (`chat.js`) that handles your project context locally, while the bridge (`relay.js`) handles the remote delivery.
+- **📊 Project Pulse:** One-tap surgical audits that synchronize Git, files, and project goals.
+- **⚡ Agent Bypass:** Low-latency, high-fidelity delivery of agent reports to Telegram without secondary summarization.
+- **🎙️ Voice Commands:** Transcribe and execute terminal commands via Telegram voice notes.
+- **📂 Workspace Switcher:** Instantly navigate between your local projects with automatic re-auditing.
 
-## Installation
+## 🛠️ Seaside Dashboard Options
 
-1. Clone or copy this folder to your local machine.
-2. Install dependencies:
+- **📁 Projects:** Lists and switches to other workspaces in your parent directory.
+- **📊 Project Pulse:** Performs a deep-dive audit of the current project's status.
+- **🧠 Antigravity Chat:** Keeps you locked into the Antigravity Brain session.
+- **♻️ Last Result:** Recovers the last generated summary from the terminal cache.
+
+## 📦 Getting Started
+
+1. **Environmental Keys:** Configure your `.env` (Rename `.env.example` to `.env`):
+   - `TG_TOKEN`: From @BotFather
+   - `ALLOWED_USER_ID`: Your Telegram ID (Use @userinfobot if you don't know it)
+   - `DEEPSEEK_API_KEY`: For the brain
+   - `OPENAI_API_KEY`: For voice/summaries
+
+2. **Installation:**
    ```bash
    npm install
    ```
-3. Set up your environment:
-   ```bash
-   cp .env.example .env
-   ```
-4. Fill in your keys in `.env`.
 
-## Usage
-
-1. Start the relay:
+3. **Deployment:**
+   Run the relay. It will automatically launch the Antigravity Brain by default.
    ```bash
    node relay.js
    ```
-2. Open your Telegram bot and send `/start`.
-3. Type a command (e.g., `ls -la`) or send a voice message.
-4. If you want to use the local Antigravity chat, just type:
-   ```
-   antigravity
-   ```
-   *Note: The relay uses your system's default `zsh` shell.*
+
+## 🔒 Security
+The relay is hard-locked to your numeric Telegram User ID. Only you can talk to your terminal. All transactions are logged to `session_audit.log` for your records.
+
+## 🤝 Project State
+**Status:** v1.0 (Stable) - Seaside Ready.
+This project follows the **"Brain-Bridge"** model for hallucination-free remote management.
 
 ## Commands
 - `/prompt [text]` - Send a command to the terminal.

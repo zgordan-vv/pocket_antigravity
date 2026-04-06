@@ -1,22 +1,5 @@
 # PRD: Pocket Antigravity
 
-Your local coding agent is powerful, but it’s anchored to your desk. Pocket Antigravity turns a Telegram bot into a remote control for your local terminal, allowing you to ship code while walking the dog or waiting for a coffee. It’s not a full IDE on your phone — it’s a high-level command center.
-
-## 1. The Core Idea
-Pocket Antigravity connects a mobile Telegram interface to your local Antigravity instance. It handles the "input" (voice/text commands) and filters the "output" (summarizing long terminal logs into 3-sentence updates). 
-
-Instead of reading 500 lines of `npm install` and `lint` errors, you get a DeepSeek-powered summary of what actually happened.
-
-## 2. The User Experience
-The interaction follows a simple loop:
-1. **The Order:** You send a voice message: *"Hey, look at the recent audit log and fix the styling in the header."*
-2. **The Execution:** The bot relays this to your local machine. Antigravity starts working.
-3. **The Update:** You ask for a summary. DeepSeek reads the terminal buffer and says: *"Fixed 3 CSS conflicts, updated the logo size, and restarted the dev server. Everything is green."*
-
-## 3. Functional Requirements
-
-### 3.1 Interface: The Telegram Bridge
-*   **Command Relay:** The bot must accept text and voice messages. Voice messages are transcribed (using OpenAI Whisper or Telegram's native STT) and piped directly into the local Antigravity input stream.
 *   **Persistent Session:** The bot maintains a connection to a specific local machine ID.
 
 ### 3.2 Output Management: The Summarizer
