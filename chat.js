@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-const fs = require('fs');
-const path = require('path');
-const { exec } = require('child_process');
-const util = require('util');
+const fs = require('node:fs');
+const path = require('node:path');
+const { exec } = require('node:child_process');
+const util = require('node:util');
 const execPromise = util.promisify(exec);
 const axios = require('axios');
 require('dotenv').config();
@@ -70,33 +70,39 @@ Context: ${context}` },
     let answer = response.data.choices[0].message.content;
 
     // Surgical Tool Execution Loop
-    if (answer.includes('[READ:')) {
-      const filePath = answer.match(/\[READ: (.+?)\]/)[1];
-      console.log(`🛠️ Tool Calling: READ ${filePath}`);
-      try {
-        const content = fs.readFileSync(path.resolve(process.cwd(), filePath), 'utf8');
-        return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Complete your response now.)`);
-      } catch (e) {
-        return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`);
+    if (answer.includes('[READ: ')) {
+      const start = answer.indexOf('[READ: ') + 7;
+      const end = answer.indexOf(']', start);
+      if (end !== -1) {
+        const filePath = answer.substring(start, end).trim();
+        console.log(`🛠️ Tool Calling: READ ${filePath}`);
+        try {
+          const content = fs.readFileSync(path.resolve(process.cwd(), filePath), 'utf8');
+          return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Complete your response now.)`);
+        } catch (e) {
+          return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`);
+        }
       }
     }
 
-    if (answer.includes('[WRITE:')) {
+    if (answer.includes('[WRITE: ')) {
       console.log(`🛠️ Tool Calling: WRITE physical file...`);
       const pathStart = answer.indexOf('[WRITE: ') + 8;
       const pathEnd = answer.indexOf(',', pathStart);
       const contentStart = answer.indexOf('CONTENT: ', pathEnd) + 9;
       const totalLength = answer.lastIndexOf(']');
       
-      const filePath = answer.substring(pathStart, pathEnd).trim();
-      const content = answer.substring(contentStart, totalLength).trim();
+      if (pathEnd !== -1 && contentStart !== -1 && totalLength !== -1) {
+        const filePath = answer.substring(pathStart, pathEnd).trim();
+        const content = answer.substring(contentStart, totalLength).trim();
 
-      try {
-        fs.writeFileSync(path.resolve(process.cwd(), filePath), content);
-        console.log(`✅ Success: Physical write to ${filePath} complete.`);
-        return await ask(`--- SUCCESS: Wrote to ${filePath} ---`);
-      } catch (e) {
-        return await ask(`--- ERROR: Failed to write ${filePath}: ${e.message} ---`);
+        try {
+          fs.writeFileSync(path.resolve(process.cwd(), filePath), content);
+          console.log(`✅ Success: Physical write to ${filePath} complete.`);
+          return await ask(`--- SUCCESS: Wrote to ${filePath} ---`);
+        } catch (e) {
+          return await ask(`--- ERROR: Failed to write ${filePath}: ${e.message} ---`);
+        }
       }
     }
     
