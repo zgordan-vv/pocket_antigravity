@@ -62,6 +62,31 @@ let lastSummary = "No commands executed yet.";
 let lastCtx = null; // Persisted context for background replies
 const MAX_BUFFER = 2000;
 
+async function sendSafeReply(ctx, text, options = {}) {
+  const MAX_LENGTH = 4000;
+  if (text.length <= MAX_LENGTH) {
+    try {
+      return await ctx.reply(`<code>${text}</code>`, { parse_mode: 'HTML', ...options });
+    } catch (e) {
+      console.error("Reply failed:", e.message);
+    }
+  }
+
+  // Chunking logic for giant reports
+  const chunks = [];
+  for (let i = 0; i < text.length; i += MAX_LENGTH) {
+    chunks.push(text.substring(i, i + MAX_LENGTH));
+  }
+
+  for (const chunk of chunks) {
+    try {
+      await ctx.reply(`<code>${chunk}</code>`, { parse_mode: 'HTML', ...options });
+    } catch (e) {
+      console.error("Chunk send failed:", e.message);
+    }
+  }
+}
+
 ptyProcess.onData(async (data) => {
   const clean = data.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
   terminalBuffer.push(clean);
@@ -74,21 +99,20 @@ ptyProcess.onData(async (data) => {
     const output = terminalBuffer.slice(lastCommandIndex).join('').trim();
     if (output.length > 2 && lastCtx) {
       // 🚀 SURGICAL LOCKDOWN: If the Agent is active, we act as a PURE PIPE.
-      // We check for the prompt OR the audit header.
       const isAgentActive = output.includes('Antigravity >') || output.includes('📊 Project Pulse');
       
       if (isAgentActive) {
-        // We deliver raw monospaced text ONLY. No boilerplate. No drift.
-        return lastCtx.reply(`<code>${output}</code>`, { 
-          parse_mode: 'HTML', 
-          ...dashboard 
-        });
+        return sendSafeReply(lastCtx, output, dashboard);
       }
       
-      const summary = await summarize(output, "auto");
-      lastSummary = summary;
-      logToAudit("AUTO_RESULT", summary);
-      bot.telegram.sendMessage(ALLOWED_ID, `<b>✅ Task Complete</b>\n\n${summary}`, { parse_mode: 'HTML' });
+      try {
+        const summary = await summarize(output, "auto");
+        lastSummary = summary;
+        logToAudit("AUTO_RESULT", summary);
+        bot.telegram.sendMessage(ALLOWED_ID, `<b>✅ Task Complete</b>\n\n${summary}`, { parse_mode: 'HTML' });
+      } catch (e) {
+        bot.telegram.sendMessage(ALLOWED_ID, "⚠️ Summary failed, but task complete.");
+      }
     }
   }
 });
