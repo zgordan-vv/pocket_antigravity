@@ -26,7 +26,7 @@ async function getProjectContext() {
   try {
     const cwd = process.cwd();
     const { stdout: tree } = await execPromise('find . -maxdepth 3 -not -path "*/.*" -not -path "*/node_modules/*"', { cwd });
-    context += `PROJECT STRUCTURE:\n${tree}\n`;
+    context += `DIRECTORY TREE:\n${tree}\n`;
 
     const { stdout: status } = await execPromise('git status -s', { cwd }).catch(() => ({ stdout: '' }));
     context += `GIT STATUS:\n${status}\n`;
@@ -48,13 +48,13 @@ async function ask(question, depth = 0) {
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: `You are Antigravity, an autonomous agent with local filesystem access. 
+        { role: 'system', content: `You are Antigravity, an autonomous agentic bridge for remote development.
 
 TOOLS:
 - [READ: path]: Returns file content or directory listing.
-- [WRITE: path, CONTENT: text]: Overwrites file with full content.
+- [WRITE: path, CONTENT: text]: Physical file write.
 
-CURRENT ORIENTATION:
+CURRENT STATE:
 ${context}` },
         ...conversationHistory
       ]
@@ -75,7 +75,7 @@ ${context}` },
           const result = stats.isDirectory() ? fs.readdirSync(fullPath).join('\n') : fs.readFileSync(fullPath, 'utf8');
           
           conversationHistory.push({ role: 'assistant', content: answer });
-          return await ask(`--- RESULT for READ ${filePath} ---\n${result}`, depth + 1);
+          return await ask(`--- RESULT: READ ${filePath} ---\n${result}`, depth + 1);
         } catch (e) {
           conversationHistory.push({ role: 'assistant', content: answer });
           return await ask(`--- ERROR: ${e.message} ---`, depth + 1);
@@ -138,24 +138,17 @@ rl.on('line', async (line) => {
 
   // Command Execution
   if (input === 'audit') {
-    // Explicitly pass full docs for audit only
-    let auditContext = "";
-    try {
-      const docs = ['PRD.md', 'implementation_plan.md', 'README.md'];
-      for (const f of docs) {
-        if (fs.existsSync(path.resolve(process.cwd(), f))) {
-          auditContext += `\n--- ${f} ---\n${fs.readFileSync(path.resolve(process.cwd(), f), 'utf8')}\n`;
-        }
-      }
-    } catch (e) {}
-
-    const answer = await ask(`Perform a project audit. 3-bullet summary of goals/status. Context:\n${auditContext}`);
+    const answer = await ask(`Perform a project audit. Provide a summary of goals and current technical status by inspecting the directory and root files.`);
     console.log(`📊 Project Pulse\n\n${answer}`);
   } else if (input.startsWith('cd ')) {
     const target = input.replace('cd ', '').replace(/['"]/g, '').trim();
     try {
-      process.chdir(target);
-      console.log(`\n🚀 Moved to: ${process.cwd()}\n`);
+      if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+         process.chdir(target);
+         console.log(`\n🚀 Moved to: ${process.cwd()}\n`);
+      } else {
+         console.log(`\n❌ Error: Directory not found: ${target}\n`);
+      }
     } catch (err) {
       console.log(`\n❌ Error: ${err.message}\n`);
     }
