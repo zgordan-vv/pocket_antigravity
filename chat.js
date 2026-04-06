@@ -49,25 +49,31 @@ async function getProjectContext() {
 
 const conversationHistory = [];
 
-async function ask(question) {
+async function ask(question, depth = 0) {
+  if (depth > 10) {
+    console.error("⚠️ Loop detected: Max recursion depth reached.");
+    return "⚠️ Error: The AI is caught in a loop. Task halted safety.";
+  }
+  
   const context = await getProjectContext();
   conversationHistory.push({ role: 'user', content: question });
   
   if (conversationHistory.length > 20) conversationHistory.shift();
 
   try {
-    console.log(`\n🧠 Antigravity is thinking...`);
+    console.log(`\n🧠 Antigravity is thinking... (Depth: ${depth})`);
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
         { role: 'system', content: `You are Antigravity, a professional agentic AI assistant. 
 TOOLS:
 - [READ: path]: Returns file content.
-- [WRITE: path, CONTENT: text]: Overwrites file. PROVDE FULL CONTENT.
+- [WRITE: path, CONTENT: text]: Overwrites file. PROVIDE FULL CONTENT.
 
 RULES:
-1. If using a tool, your response MUST ONLY contain the tool call. NO PREAMBLE. NO FILLER.
+1. If using a tool, your response MUST ONLY contain the tool call. NO PREAMBLE.
 2. Only one tool per turn.
+3. Be surgical. If a task is complete, stop tool calls.
 Context: ${context}` },
         ...conversationHistory
       ]
@@ -75,7 +81,7 @@ Context: ${context}` },
     
     let answer = response.data.choices[0].message.content.trim();
 
-    // Surgical Tool Detection (First Match Only)
+    // Surgical Tool Detection
     if (answer.includes('[READ: ')) {
       const start = answer.indexOf('[READ: ') + 7;
       const end = answer.indexOf(']', start);
@@ -84,9 +90,9 @@ Context: ${context}` },
         console.log(`🛠️ Tool Calling: READ ${filePath}`);
         try {
           const content = fs.readFileSync(path.resolve(process.cwd(), filePath), 'utf8');
-          return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Based on this, finalize your response now.)`);
+          return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Verify and finalize.)`, depth + 1);
         } catch (e) {
-          return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`);
+          return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`, depth + 1);
         }
       }
     }
@@ -103,11 +109,13 @@ Context: ${context}` },
         
         console.log(`🛠️ Tool Calling: WRITE ${pathPart}`);
         try {
-          fs.writeFileSync(path.resolve(process.cwd(), pathPart), fileContent);
+          const fullPath = path.resolve(process.cwd(), pathPart);
+          fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+          fs.writeFileSync(fullPath, fileContent);
           console.log(`✅ Success: Physical write to ${pathPart} complete.`);
-          return await ask(`--- SUCCESS: Wrote to ${pathPart} ---`);
+          return await ask(`--- SUCCESS: Wrote to ${pathPart}. The file is now correct. ---`, depth + 1);
         } catch (e) {
-          return await ask(`--- ERROR: Failed to write ${pathPart}: ${e.message} ---`);
+          return await ask(`--- ERROR: Failed to write ${pathPart}: ${e.message} ---`, depth + 1);
         }
       }
     }
