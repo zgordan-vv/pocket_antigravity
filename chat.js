@@ -25,21 +25,11 @@ async function getProjectContext() {
   let context = "";
   try {
     const cwd = process.cwd();
-    const docs = ['PRD.md', 'implementation_plan.md', 'README.md', 'package.json'];
-    
-    for (const f of docs) {
-      if (fs.existsSync(path.resolve(cwd, f))) {
-        const content = fs.readFileSync(path.resolve(cwd, f), 'utf8');
-        context += `\n--- FILE: ${f} ---\n${content}\n`;
-      }
-    }
-
-    const { stdout: tree } = await execPromise('find . -maxdepth 4 -not -path "*/.*" -not -path "*/node_modules/*"', { cwd });
-    context += `\nPROJECT STRUCTURE:\n${tree}\n`;
+    const { stdout: tree } = await execPromise('find . -maxdepth 3 -not -path "*/.*" -not -path "*/node_modules/*"', { cwd });
+    context += `PROJECT STRUCTURE:\n${tree}\n`;
 
     const { stdout: status } = await execPromise('git status -s', { cwd }).catch(() => ({ stdout: '' }));
-    context += `\nGIT STATUS:\n${status}\n`;
-
+    context += `GIT STATUS:\n${status}\n`;
   } catch (e) {}
   return context;
 }
@@ -54,7 +44,7 @@ async function ask(question, depth = 0) {
   if (conversationHistory.length > 30) conversationHistory.shift();
 
   try {
-    console.log(`\n🧠 Antigravity is thinking...`);
+    console.log(`\n🧠 Antigravity is thinking... (Depth: ${depth})`);
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
@@ -64,7 +54,7 @@ TOOLS:
 - [READ: path]: Returns file content or directory listing.
 - [WRITE: path, CONTENT: text]: Overwrites file with full content.
 
-PROJECT CONTEXT:
+CURRENT ORIENTATION:
 ${context}` },
         ...conversationHistory
       ]
@@ -146,11 +136,20 @@ rl.on('line', async (line) => {
   }
   if (input.toLowerCase() === 'exit') process.exit(0);
 
-  const context = await getProjectContext();
-
-  // Command Execution (Surgical)
+  // Command Execution
   if (input === 'audit') {
-    const answer = await ask(`Perform a project audit based on this context. 3-bullet summary of goals and status.`);
+    // Explicitly pass full docs for audit only
+    let auditContext = "";
+    try {
+      const docs = ['PRD.md', 'implementation_plan.md', 'README.md'];
+      for (const f of docs) {
+        if (fs.existsSync(path.resolve(process.cwd(), f))) {
+          auditContext += `\n--- ${f} ---\n${fs.readFileSync(path.resolve(process.cwd(), f), 'utf8')}\n`;
+        }
+      }
+    } catch (e) {}
+
+    const answer = await ask(`Perform a project audit. 3-bullet summary of goals/status. Context:\n${auditContext}`);
     console.log(`📊 Project Pulse\n\n${answer}`);
   } else if (input.startsWith('cd ')) {
     const target = input.replace('cd ', '').replace(/['"]/g, '').trim();
