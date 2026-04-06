@@ -150,7 +150,7 @@ rl.on('line', async (line) => {
 
   // Command Execution (Surgical)
   if (input === 'audit') {
-    const answer = await ask(`Perform a project audit based on this context. 3-bullet summary of goals and status.`, context);
+    const answer = await ask(`Perform a project audit based on this context. 3-bullet summary of goals and status.`);
     console.log(`📊 Project Pulse\n\n${answer}`);
   } else if (input.startsWith('cd ')) {
     const target = input.replace('cd ', '').replace(/['"]/g, '').trim();
@@ -161,7 +161,7 @@ rl.on('line', async (line) => {
       console.log(`\n❌ Error: ${err.message}\n`);
     }
   } else {
-    const answer = await ask(input, context);
+    const answer = await ask(input);
     console.log(`\n${answer}\n`);
   }
   rl.prompt();
