@@ -22,37 +22,38 @@ const deepseek = axios.create({
 });
 
 async function getProjectContext() {
+  let context = "";
   try {
     const cwd = process.cwd();
     // Surgical Vision: Sniff out all .md plans in the root
-    const planFiles = await execPromise('find . -maxdepth 1 -name "*.md" | head -n 4', { cwd })
-      .then(r => r.stdout.split('\n').filter(Boolean))
-      .catch(() => []);
+    const planFiles = Array.from(new Set(['PRD.md', 'implementation_plan.md', 'README.md']))
+      .filter(f => fs.existsSync(path.resolve(cwd, f)));
     
-    const docContexts = await Promise.all(planFiles.map(f => 
-      execPromise(`cat "${f}" | head -c 800`, { cwd })
-        .then(r => `--- FILE: ${f} ---\n${r.stdout}\n`)
-        .catch(() => '')
-    ));
+    for (const f of planFiles) {
+      try {
+        const content = fs.readFileSync(path.resolve(cwd, f), 'utf8').substring(0, 1000);
+        context += `\n--- FILE: ${f} ---\n${content}\n`;
+      } catch (e) {}
+    }
 
-    const [git, files, pkg] = await Promise.all([
-      execPromise('git status -s', { cwd }).then(r => r.stdout).catch(() => 'No git'),
-      execPromise('ls -F | head -n 12', { cwd }).then(r => r.stdout).catch(() => 'No files'),
-      execPromise('cat package.json 2>/dev/null | head -c 800', { cwd }).then(r => r.stdout).catch(() => '')
-    ]);
+    const { stdout: tree } = await execPromise('find . -maxdepth 3 -not -path "*/.*" -not -path "*/node_modules/*"', { cwd });
+    context += `\nFILE TREE:\n${tree}\n`;
 
-    return `ACTUAL PROJECT DIRECTORY: ${cwd}\n\nProject Plans & Docs:\n${docContexts.join('\n')}\nGit Status: ${git}\nFiles:\n${files}\nTechnical Deps (package.json):\n${pkg}`;
+    const { stdout: status } = await execPromise('git status -s', { cwd }).catch(() => ({ stdout: 'No git' }));
+    context += `\nGIT STATUS:\n${status}\n`;
+
   } catch (e) {
-    return `Context unavailable for ${process.cwd()}`;
+    console.error("Context Error:", e.message);
   }
+  return context;
 }
 
 const conversationHistory = [];
 
 async function ask(question, depth = 0) {
-  if (depth > 10) {
-    console.error("⚠️ Loop detected: Max recursion depth reached.");
-    return "⚠️ Error: The AI is caught in a loop. Task halted safety.";
+  if (depth > 30) {
+    console.error("⚠️ Max recursion depth (30) reached.");
+    return "⚠️ Error: The AI reached the execution limit for this turn.";
   }
   
   const context = await getProjectContext();
@@ -65,17 +66,15 @@ async function ask(question, depth = 0) {
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: `You are Antigravity, a professional agentic AI assistant. 
+        { role: 'system', content: `You are Antigravity, an autonomous agent.
 TOOLS:
-- [READ: path]: Returns file content OR lists directory contents if path is a folder.
-- [WRITE: path, CONTENT: text]: Overwrites file. PROVIDE FULL CONTENT.
+- [READ: path]: Returns content or lists directory.
+- [WRITE: path, CONTENT: text]: Overwrites file.
 
 RULES:
-1. If using a tool, your response MUST ONLY contain the tool call. NO PREAMBLE.
-2. To explore a project, use [READ: ./] to list the root directory.
-3. Only one tool per turn.
-4. Be surgical. If a task is complete, stop tool calls.
-Context: ${context}` },
+1. ONLY response with the tool call if using a tool.
+2. Project Context & File Tree:
+${context}` },
         ...conversationHistory
       ]
     }, { timeout: 60000 });
