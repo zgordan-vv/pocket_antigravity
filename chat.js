@@ -2,14 +2,10 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { exec } = require('node:child_process');
-const util = require('node:util');
-const execPromise = util.promisify(exec);
 const axios = require('axios');
 require('dotenv').config();
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const PARENT_DIR = path.dirname(__dirname);
 
 if (!DEEPSEEK_API_KEY) {
   console.error("❌ DEEPSEEK_API_KEY missing in .env");
@@ -21,48 +17,30 @@ const deepseek = axios.create({
   headers: { 'Authorization': `Bearer ${DEEPSEEK_API_KEY}` }
 });
 
-async function getProjectContext() {
-  let context = "";
-  try {
-    const cwd = process.cwd();
-    const { stdout: tree } = await execPromise('find . -maxdepth 3 -not -path "*/.*" -not -path "*/node_modules/*"', { cwd });
-    context += `DIRECTORY TREE:\n${tree}\n`;
-
-    const { stdout: status } = await execPromise('git status -s', { cwd }).catch(() => ({ stdout: '' }));
-    context += `GIT STATUS:\n${status}\n`;
-  } catch (e) {}
-  return context;
-}
-
 const conversationHistory = [];
 
 async function ask(question, depth = 0) {
   if (depth > 50) return "⚠️ Execution limit reached.";
   
-  const context = await getProjectContext();
   conversationHistory.push({ role: 'user', content: question });
   if (conversationHistory.length > 30) conversationHistory.shift();
 
   try {
-    console.log(`\n🧠 Antigravity is thinking... (Depth: ${depth})`);
+    console.log(`\n🧠 Antigravity is thinking...`);
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: `You are Antigravity, an autonomous agentic bridge for remote development.
-
+        { role: 'system', content: `You are Antigravity, an autonomous agent.
 TOOLS:
 - [READ: path]: Returns file content or directory listing.
-- [WRITE: path, CONTENT: text]: Physical file write.
-
-CURRENT STATE:
-${context}` },
+- [WRITE: path, CONTENT: text]: Physical file write.` },
         ...conversationHistory
       ]
     }, { timeout: 300000 });
     
     let answer = response.data.choices[0].message.content.trim();
 
-    // Tool Detection
+    // Tool Detection (Pure Pass-through)
     if (answer.includes('[READ: ')) {
       const start = answer.indexOf('[READ: ') + 7;
       const end = answer.indexOf(']', start);
@@ -73,7 +51,6 @@ ${context}` },
           const fullPath = path.resolve(process.cwd(), filePath);
           const stats = fs.statSync(fullPath);
           const result = stats.isDirectory() ? fs.readdirSync(fullPath).join('\n') : fs.readFileSync(fullPath, 'utf8');
-          
           conversationHistory.push({ role: 'assistant', content: answer });
           return await ask(`--- RESULT: READ ${filePath} ---\n${result}`, depth + 1);
         } catch (e) {
@@ -98,7 +75,6 @@ ${context}` },
           fs.mkdirSync(path.dirname(fullPath), { recursive: true });
           fs.writeFileSync(fullPath, fileContent);
           console.log(`✅ Success: Physical write to ${pathPart} complete.`);
-          
           conversationHistory.push({ role: 'assistant', content: answer });
           return await ask(`--- SUCCESS: Wrote ${pathPart} ---`, depth + 1);
         } catch (e) {
@@ -124,8 +100,7 @@ const rl = require('node:readline').createInterface({
   prompt: 'Antigravity > '
 });
 
-console.log("🚀 Antigravity CLI v1.0 (Mobile Ready)");
-console.log("Type your project questions below. Type 'exit' to quit.\n");
+console.log("🚀 Antigravity CLI v3.0 (Pure Pipe Mode)");
 rl.prompt();
 
 rl.on('line', async (line) => {
@@ -136,19 +111,11 @@ rl.on('line', async (line) => {
   }
   if (input.toLowerCase() === 'exit') process.exit(0);
 
-  // Command Execution
-  if (input === 'audit') {
-    const answer = await ask(`Perform a project audit. Provide a summary of goals and current technical status by inspecting the directory and root files.`);
-    console.log(`📊 Project Pulse\n\n${answer}`);
-  } else if (input.startsWith('cd ')) {
+  if (input.startsWith('cd ')) {
     const target = input.replace('cd ', '').replace(/['"]/g, '').trim();
     try {
-      if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
-         process.chdir(target);
-         console.log(`\n🚀 Moved to: ${process.cwd()}\n`);
-      } else {
-         console.log(`\n❌ Error: Directory not found: ${target}\n`);
-      }
+      process.chdir(target);
+      console.log(`\n🚀 Moved to: ${process.cwd()}\n`);
     } catch (err) {
       console.log(`\n❌ Error: ${err.message}\n`);
     }
