@@ -67,13 +67,14 @@ async function ask(question, depth = 0) {
       messages: [
         { role: 'system', content: `You are Antigravity, a professional agentic AI assistant. 
 TOOLS:
-- [READ: path]: Returns file content.
+- [READ: path]: Returns file content OR lists directory contents if path is a folder.
 - [WRITE: path, CONTENT: text]: Overwrites file. PROVIDE FULL CONTENT.
 
 RULES:
 1. If using a tool, your response MUST ONLY contain the tool call. NO PREAMBLE.
-2. Only one tool per turn.
-3. Be surgical. If a task is complete, stop tool calls.
+2. To explore a project, use [READ: ./] to list the root directory.
+3. Only one tool per turn.
+4. Be surgical. If a task is complete, stop tool calls.
 Context: ${context}` },
         ...conversationHistory
       ]
@@ -89,7 +90,15 @@ Context: ${context}` },
         const filePath = answer.substring(start, end).trim().replace(/['"]/g, '');
         console.log(`🛠️ Tool Calling: READ ${filePath}`);
         try {
-          const content = fs.readFileSync(path.resolve(process.cwd(), filePath), 'utf8');
+          const fullPath = path.resolve(process.cwd(), filePath);
+          const stats = fs.statSync(fullPath);
+          
+          if (stats.isDirectory()) {
+            const files = fs.readdirSync(fullPath);
+            return await ask(`--- DIRECTORY LISTING: ${filePath} ---\n${files.join('\n')}\n\n(Explore further or finalize.)`, depth + 1);
+          }
+          
+          const content = fs.readFileSync(fullPath, 'utf8');
           return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Verify and finalize.)`, depth + 1);
         } catch (e) {
           return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`, depth + 1);
