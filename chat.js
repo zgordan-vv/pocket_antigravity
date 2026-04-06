@@ -50,16 +50,14 @@ async function getProjectContext() {
 
 const conversationHistory = [];
 
-async function ask(question, depth = 0) {
+async function ask(question, context, depth = 0) {
   if (depth > 30) {
     console.error("⚠️ Max recursion depth (30) reached.");
     return "⚠️ Error: The AI reached the execution limit for this turn.";
   }
   
-  const context = await getProjectContext();
   conversationHistory.push({ role: 'user', content: question });
-  
-  if (conversationHistory.length > 20) conversationHistory.shift();
+  if (conversationHistory.length > 20) conversationHistory.splice(0, 2);
 
   try {
     console.log(`\n🧠 Antigravity is thinking... (Depth: ${depth})`);
@@ -77,7 +75,7 @@ RULES:
 ${context}` },
         ...conversationHistory
       ]
-    }, { timeout: 60000 });
+    }, { timeout: 120000 });
     
     let answer = response.data.choices[0].message.content.trim();
 
@@ -101,12 +99,11 @@ ${context}` },
             toolResult = `--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Verify and finalize.)`;
           }
 
-          // Push tool call to history but keep it lean
           conversationHistory.push({ role: 'assistant', content: answer });
-          return await ask(toolResult, depth + 1);
+          return await ask(toolResult, context, depth + 1);
         } catch (e) {
           conversationHistory.push({ role: 'assistant', content: answer });
-          return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`, depth + 1);
+          return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`, context, depth + 1);
         }
       }
     }
@@ -129,22 +126,15 @@ ${context}` },
           console.log(`✅ Success: Physical write to ${pathPart} complete.`);
           
           conversationHistory.push({ role: 'assistant', content: `[TOOL_METADATA: Wrote ${fileContent.length} chars to ${pathPart}]` });
-          return await ask(`--- SUCCESS: Wrote to ${pathPart}. The file is now correct. ---`, depth + 1);
+          return await ask(`--- SUCCESS: Wrote to ${pathPart}. The file is now correct. ---`, context, depth + 1);
         } catch (e) {
           conversationHistory.push({ role: 'assistant', content: answer });
-          return await ask(`--- ERROR: Failed to write ${pathPart}: ${e.message} ---`, depth + 1);
+          return await ask(`--- ERROR: Failed to write ${pathPart}: ${e.message} ---`, context, depth + 1);
         }
       }
     }
     
-    // Final response cleanup: keep history lean
     conversationHistory.push({ role: 'assistant', content: answer });
-    
-    // Auto-Truncate History to prevent token bloat
-    if (conversationHistory.length > 20) {
-      conversationHistory.splice(0, 2); // Remove oldest user/assistant pair
-    }
-
     return answer;
   } catch (err) {
     const errorMsg = err.response?.data?.error?.message || err.message;
@@ -175,10 +165,11 @@ rl.on('line', async (line) => {
   }
   if (input.toLowerCase() === 'exit') process.exit(0);
 
+  const context = await getProjectContext();
+
   // Command Execution (Surgical)
   if (input === 'audit') {
-    const context = await getProjectContext();
-    const answer = await ask(`Perform a project audit based on this context. 3-bullet summary of goals and status. Context:\n${context}`);
+    const answer = await ask(`Perform a project audit based on this context. 3-bullet summary of goals and status.`, context);
     console.log(`📊 Project Pulse\n\n${answer}`);
   } else if (input.startsWith('cd ')) {
     const target = input.replace('cd ', '').replace(/['"]/g, '').trim();
@@ -189,7 +180,7 @@ rl.on('line', async (line) => {
       console.log(`\n❌ Error: ${err.message}\n`);
     }
   } else {
-    const answer = await ask(input);
+    const answer = await ask(input, context);
     console.log(`\n${answer}\n`);
   }
   rl.prompt();
