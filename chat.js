@@ -25,22 +25,21 @@ async function getProjectContext() {
   let context = "";
   try {
     const cwd = process.cwd();
-    // Surgical Vision: Sniff out all .md plans in the root
     const planFiles = Array.from(new Set(['PRD.md', 'implementation_plan.md', 'README.md']))
       .filter(f => fs.existsSync(path.resolve(cwd, f)));
     
     for (const f of planFiles) {
       try {
-        const content = fs.readFileSync(path.resolve(cwd, f), 'utf8').substring(0, 1000);
-        context += `\n--- FILE: ${f} ---\n${content}\n`;
+        const content = fs.readFileSync(path.resolve(cwd, f), 'utf8').substring(0, 800);
+        context += `\n--- DOC: ${f} (first 800 chars) ---\n${content}\n`;
       } catch (e) {}
     }
 
-    const { stdout: tree } = await execPromise('find . -maxdepth 3 -not -path "*/.*" -not -path "*/node_modules/*"', { cwd });
-    context += `\nFILE TREE:\n${tree}\n`;
+    const { stdout: tree } = await execPromise('find . -maxdepth 2 -not -path "*/.*" -not -path "*/node_modules/*" | head -n 150', { cwd });
+    context += `\nMAP:\n${tree}\n`;
 
     const { stdout: status } = await execPromise('git status -s', { cwd }).catch(() => ({ stdout: 'No git' }));
-    context += `\nGIT STATUS:\n${status}\n`;
+    context += `\nGIT:\n${status}\n`;
 
   } catch (e) {
     console.error("Context Error:", e.message);
@@ -71,11 +70,12 @@ TOOLS:
 
 RULES:
 1. ONLY response with the tool call if using a tool.
-2. Project Context & File Tree:
+2. BE CONCISE. Avoid filler.
+3. Project Map:
 ${context}` },
         ...conversationHistory
       ]
-    }, { timeout: 120000 });
+    }, { timeout: 60000 });
     
     let answer = response.data.choices[0].message.content.trim();
 
