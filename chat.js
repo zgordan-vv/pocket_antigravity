@@ -60,25 +60,31 @@ async function ask(question) {
     const response = await deepseek.post('/chat/completions', {
       model: 'deepseek-chat',
       messages: [
-        { role: 'system', content: `You are Antigravity, a powerful agentic AI assistant. Use [READ: path] to see files and [WRITE: path, CONTENT: text] to create/edit them. 
-IMPORTANT: When using [WRITE], ensure you provide the ENTIRE content of the file. 
+        { role: 'system', content: `You are Antigravity, a professional agentic AI assistant. 
+TOOLS:
+- [READ: path]: Returns file content.
+- [WRITE: path, CONTENT: text]: Overwrites file. PROVDE FULL CONTENT.
+
+RULES:
+1. If using a tool, your response MUST ONLY contain the tool call. NO PREAMBLE. NO FILLER.
+2. Only one tool per turn.
 Context: ${context}` },
         ...conversationHistory
       ]
-    }, { timeout: 45000 });
+    }, { timeout: 60000 });
     
-    let answer = response.data.choices[0].message.content;
+    let answer = response.data.choices[0].message.content.trim();
 
-    // Surgical Tool Execution Loop
+    // Surgical Tool Detection (First Match Only)
     if (answer.includes('[READ: ')) {
       const start = answer.indexOf('[READ: ') + 7;
       const end = answer.indexOf(']', start);
       if (end !== -1) {
-        const filePath = answer.substring(start, end).trim();
+        const filePath = answer.substring(start, end).trim().replace(/['"]/g, '');
         console.log(`🛠️ Tool Calling: READ ${filePath}`);
         try {
           const content = fs.readFileSync(path.resolve(process.cwd(), filePath), 'utf8');
-          return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Complete your response now.)`);
+          return await ask(`--- FILE CONTENT: ${filePath} ---\n${content}\n\n(Based on this, finalize your response now.)`);
         } catch (e) {
           return await ask(`--- ERROR: Could not read ${filePath}: ${e.message} ---`);
         }
@@ -86,22 +92,22 @@ Context: ${context}` },
     }
 
     if (answer.includes('[WRITE: ')) {
-      console.log(`🛠️ Tool Calling: WRITE physical file...`);
-      const pathStart = answer.indexOf('[WRITE: ') + 8;
-      const pathEnd = answer.indexOf(',', pathStart);
-      const contentStart = answer.indexOf('CONTENT: ', pathEnd) + 9;
-      const totalLength = answer.lastIndexOf(']');
-      
-      if (pathEnd !== -1 && contentStart !== -1 && totalLength !== -1) {
-        const filePath = answer.substring(pathStart, pathEnd).trim();
-        const content = answer.substring(contentStart, totalLength).trim();
+      const blockStart = answer.indexOf('[WRITE: ');
+      const contentKey = 'CONTENT: ';
+      const contentIdx = answer.indexOf(contentKey, blockStart);
+      const closeIdx = answer.lastIndexOf(']');
 
+      if (contentIdx !== -1 && closeIdx > contentIdx) {
+        const pathPart = answer.substring(blockStart + 8, answer.indexOf(',', blockStart)).trim().replace(/['"]/g, '');
+        const fileContent = answer.substring(contentIdx + contentKey.length, closeIdx).trim();
+        
+        console.log(`🛠️ Tool Calling: WRITE ${pathPart}`);
         try {
-          fs.writeFileSync(path.resolve(process.cwd(), filePath), content);
-          console.log(`✅ Success: Physical write to ${filePath} complete.`);
-          return await ask(`--- SUCCESS: Wrote to ${filePath} ---`);
+          fs.writeFileSync(path.resolve(process.cwd(), pathPart), fileContent);
+          console.log(`✅ Success: Physical write to ${pathPart} complete.`);
+          return await ask(`--- SUCCESS: Wrote to ${pathPart} ---`);
         } catch (e) {
-          return await ask(`--- ERROR: Failed to write ${filePath}: ${e.message} ---`);
+          return await ask(`--- ERROR: Failed to write ${pathPart}: ${e.message} ---`);
         }
       }
     }
@@ -110,8 +116,12 @@ Context: ${context}` },
     if (conversationHistory.length > 20) conversationHistory.shift();
     return answer;
   } catch (err) {
-    console.error(`❌ Brain Error:`, err.message);
-    return "❌ Error: " + (err.response?.data?.error?.message || err.message);
+    const errorMsg = err.response?.data?.error?.message || err.message;
+    console.error(`❌ Brain Error:`, errorMsg);
+    if (errorMsg.includes('aborted') || errorMsg.includes('timeout')) {
+      return "❌ Error: The AI brain timed out. Please try your command again.";
+    }
+    return "❌ Error: " + errorMsg;
   }
 }
 
