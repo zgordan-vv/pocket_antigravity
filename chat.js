@@ -47,6 +47,8 @@ async function getProjectContext() {
   }
 }
 
+const conversationHistory = [];
+
 async function ask(question) {
   const context = await getProjectContext();
   conversationHistory.push({ role: 'user', content: question });
