@@ -22,6 +22,9 @@ const conversationHistory = [];
 async function ask(question, depth = 0) {
   if (depth > 50) return "⚠️ Execution limit reached.";
   
+  const cwd = process.cwd();
+  const rootFiles = fs.readdirSync(cwd).slice(0, 50).join(', ');
+
   conversationHistory.push({ role: 'user', content: question });
   if (conversationHistory.length > 30) conversationHistory.shift();
 
@@ -31,9 +34,14 @@ async function ask(question, depth = 0) {
       model: 'deepseek-chat',
       messages: [
         { role: 'system', content: `You are Antigravity, an autonomous agent.
+LOCATION: ${cwd}
+ROOT FILES: ${rootFiles}
+
 TOOLS:
 - [READ: path]: Returns file content or directory listing.
-- [WRITE: path, CONTENT: text]: Physical file write.` },
+- [WRITE: path, CONTENT: text]: Physical file write.
+
+RULE: Stay within the project scope unless instructed otherwise.` },
         ...conversationHistory
       ]
     }, { timeout: 300000 });
